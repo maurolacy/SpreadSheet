@@ -9,10 +9,12 @@ fn main() {
     println!("A2: {}", a2);
     sheet.set_cell("A2", a2);
 
-    let a3 = "10+A2+30+4./5.123";
+    let a3 = "10+A2+30+4./5.1 + B4";
     println!("A3: {}", a3);
     sheet.set_cell("A3", a3);
 
     let res = sheet.get_cell("A3").unwrap();
-    println!("{}= {}", a3, res);
+    println!("{} = {}", a3, res);
+
+    println!("B4: {:?}", sheet.get_cell("B4"));
 }

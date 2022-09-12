@@ -41,8 +41,9 @@ impl SpreadSheet {
             AST::Int(int) => *int as _,
             AST::Float(float) => *float,
             AST::Cell(cell) => {
-                let tree = self.cells.get(cell).unwrap();
-                self.eval(&tree.as_abstract_syntax_tree())
+                let tree = self.cells.get(cell);
+                tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()))
+                    .unwrap_or_default()
             }
             AST::BinaryOperation(args) => match &args[1] {
                 AST::OperatorAdd => self.eval(&args[0]) + self.eval(&args[2]),
