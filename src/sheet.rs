@@ -7,6 +7,20 @@ use santiago::grammar::Associativity;
 use santiago::grammar::Grammar;
 use santiago::parser::Tree;
 
+#[derive(Debug)]
+pub enum AST {
+    Cell(String),
+    Float(f64),
+    Int(i64),
+    BinaryOperation(Vec<AST>),
+    OperatorAdd,
+    OperatorSubtract,
+    OperatorMultiply,
+    OperatorDivide,
+    OperatorPotentiate,
+    UnaryOperation(Vec<AST>),
+}
+
 pub struct SpreadSheet {
     lexer: LexerRules,
     grammar: Grammar<AST>,
@@ -17,10 +31,67 @@ pub struct SpreadSheet {
 }
 
 impl SpreadSheet {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            lexer: lexer_rules(),
-            grammar: grammar(),
+            lexer: santiago::lexer_rules!(
+                "DEFAULT" | "CELL" = pattern r"[A-Z][0-9]+";
+                "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
+                "DEFAULT" | "INT" = pattern r"[0-9]+";
+                "DEFAULT" | "+" = string "+";
+                "DEFAULT" | "-" = string "-";
+                "DEFAULT" | "*" = string "*";
+                "DEFAULT" | "/" = string "/";
+                "DEFAULT" | "**" = string "**";
+                "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
+            ),
+            grammar: santiago::grammar!(
+                "expr" => rules "cell";
+                "expr" => rules "float";
+                "expr" => rules "int";
+
+                "expr" => rules "expr" "add" "expr" =>
+                    AST::BinaryOperation;
+                "expr" => rules "expr" "subtract" "expr"=>
+                    AST::BinaryOperation;
+                "expr" => rules "expr" "multiply" "expr"=>
+                    AST::BinaryOperation;
+                "expr" => rules "expr" "divide" "expr"=>
+                    AST::BinaryOperation;
+
+                "expr" => rules "add" "expr" =>
+                    AST::UnaryOperation;
+                "expr" => rules "subtract" "expr" =>
+                    AST::UnaryOperation;
+
+                "add" => lexemes "+" =>
+                    |_| AST::OperatorAdd;
+                "subtract" => lexemes "-" =>
+                    |_| AST::OperatorSubtract;
+                "multiply" => lexemes "*" =>
+                    |_| AST::OperatorMultiply;
+                "divide" => lexemes "/" =>
+                    |_| AST::OperatorDivide;
+                "multiply" => lexemes "**" =>
+                    |_| AST::OperatorPotentiate;
+
+                "cell" => lexemes "CELL" =>
+                    |lexemes| {
+                        AST::Cell(lexemes[0].raw.clone())
+                    };
+                "float" => lexemes "FLOAT" =>
+                    |lexemes| {
+                        let value = str::parse(&lexemes[0].raw).unwrap();
+                        AST::Float(value)
+                    };
+                "int" => lexemes "INT" =>
+                    |lexemes| {
+                        let value = str::parse(&lexemes[0].raw).unwrap();
+                        AST::Int(value)
+                    };
+
+                Associativity::Left => rules "add" "subtract";
+                Associativity::Left => rules "multiply" "divide";
+            ),
             cells: HashMap::new(),
             cells_cache: RefCell::new(HashMap::new()),
             cells_deps: RefCell::new(HashMap::new()),
@@ -28,7 +99,7 @@ impl SpreadSheet {
         }
     }
 
-    pub(crate) fn get_cell(&self, cell: &str) -> Option<f64> {
+    pub fn get_cell(&self, cell: &str) -> Option<f64> {
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
         if value.is_some() {
@@ -44,7 +115,7 @@ impl SpreadSheet {
         value
     }
 
-    pub(crate) fn set_cell(&mut self, cell: &str, value: &str) {
+    pub fn set_cell(&mut self, cell: &str, value: &str) {
         // Lex value
         let lexemes = santiago::lexer::lex(&self.lexer, value).unwrap();
 
@@ -117,83 +188,4 @@ impl SpreadSheet {
             _ => unreachable!(),
         }
     }
-}
-
-pub fn lexer_rules() -> LexerRules {
-    santiago::lexer_rules!(
-        "DEFAULT" | "CELL" = pattern r"[A-Z][0-9]+";
-        "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
-        "DEFAULT" | "INT" = pattern r"[0-9]+";
-        "DEFAULT" | "+" = string "+";
-        "DEFAULT" | "-" = string "-";
-        "DEFAULT" | "*" = string "*";
-        "DEFAULT" | "/" = string "/";
-        "DEFAULT" | "**" = string "**";
-        "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
-    )
-}
-
-#[derive(Debug)]
-pub enum AST {
-    Cell(String),
-    Float(f64),
-    Int(i64),
-    BinaryOperation(Vec<AST>),
-    OperatorAdd,
-    OperatorSubtract,
-    OperatorMultiply,
-    OperatorDivide,
-    OperatorPotentiate,
-    UnaryOperation(Vec<AST>),
-}
-
-pub fn grammar() -> Grammar<AST> {
-    santiago::grammar!(
-        "expr" => rules "cell";
-        "expr" => rules "float";
-        "expr" => rules "int";
-
-        "expr" => rules "expr" "add" "expr" =>
-            AST::BinaryOperation;
-        "expr" => rules "expr" "subtract" "expr"=>
-            AST::BinaryOperation;
-        "expr" => rules "expr" "multiply" "expr"=>
-            AST::BinaryOperation;
-        "expr" => rules "expr" "divide" "expr"=>
-            AST::BinaryOperation;
-
-        "expr" => rules "add" "expr" =>
-            AST::UnaryOperation;
-        "expr" => rules "subtract" "expr" =>
-            AST::UnaryOperation;
-
-        "add" => lexemes "+" =>
-            |_| AST::OperatorAdd;
-        "subtract" => lexemes "-" =>
-            |_| AST::OperatorSubtract;
-        "multiply" => lexemes "*" =>
-            |_| AST::OperatorMultiply;
-        "divide" => lexemes "/" =>
-            |_| AST::OperatorDivide;
-        "multiply" => lexemes "**" =>
-            |_| AST::OperatorPotentiate;
-
-        "cell" => lexemes "CELL" =>
-            |lexemes| {
-                AST::Cell(lexemes[0].raw.clone())
-            };
-        "float" => lexemes "FLOAT" =>
-            |lexemes| {
-                let value = str::parse(&lexemes[0].raw).unwrap();
-                AST::Float(value)
-            };
-        "int" => lexemes "INT" =>
-            |lexemes| {
-                let value = str::parse(&lexemes[0].raw).unwrap();
-                AST::Int(value)
-            };
-
-        Associativity::Left => rules "add" "subtract";
-        Associativity::Left => rules "multiply" "divide";
-    )
 }
