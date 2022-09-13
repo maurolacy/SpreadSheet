@@ -119,6 +119,19 @@ impl SpreadSheet {
         // Lex value
         let lexemes = santiago::lexer::lex(&self.lexer, value).unwrap();
 
+        // Parse value
+        let res = santiago::parser::parse(&self.grammar, &lexemes);
+        if res.is_err() {
+            println!("Error in {}: {:?}", value, res.unwrap_err());
+            return;
+        }
+        let parse_tree = res.unwrap();
+        if parse_tree.len() != 1 {
+            println!("Error: Invalid expression: {}", value);
+            return;
+        }
+        let parse_tree = parse_tree.first().unwrap();
+
         // Borrow direct and reverse deps
         let mut deps = self.cells_deps.borrow_mut();
         let mut rev_deps = self.cells_rev_deps.borrow_mut();
@@ -144,20 +157,10 @@ impl SpreadSheet {
                 cell_rev_deps.insert(cell.to_string());
             }
         }
-        // Parse value
-        let res = santiago::parser::parse(&self.grammar, &lexemes);
-        if res.is_err() {
-            println!("Error in {}: {:?}", value, res.unwrap_err());
-            return;
-        }
-        let parse_tree = res.unwrap();
-        if parse_tree.len() != 1 {
-            println!("Error: Invalid expression: {}", value);
-            return;
-        }
-        let parse_tree = parse_tree.first().unwrap();
+
         // Store cell
         self.cells.insert(cell.to_string(), parse_tree.clone());
+
         // Invalidate cache
         let mut cache = self.cells_cache.borrow_mut();
         cache.remove(cell);
