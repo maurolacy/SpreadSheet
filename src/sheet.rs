@@ -106,6 +106,7 @@ impl SpreadSheet {
                 AST::OperatorSubtract => self.eval(&args[0]) - self.eval(&args[2]),
                 AST::OperatorMultiply => self.eval(&args[0]) * self.eval(&args[2]),
                 AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
+                AST::OperatorPotentiate => f64::powf(self.eval(&args[0]), self.eval(&args[2])),
                 _ => unreachable!(),
             },
             AST::UnaryOperation(args) => match &args[0] {
@@ -127,6 +128,7 @@ pub fn lexer_rules() -> LexerRules {
         "DEFAULT" | "-" = string "-";
         "DEFAULT" | "*" = string "*";
         "DEFAULT" | "/" = string "/";
+        "DEFAULT" | "**" = string "**";
         "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
     )
 }
@@ -141,6 +143,7 @@ pub enum AST {
     OperatorSubtract,
     OperatorMultiply,
     OperatorDivide,
+    OperatorPotentiate,
     UnaryOperation(Vec<AST>),
 }
 
@@ -172,6 +175,8 @@ pub fn grammar() -> Grammar<AST> {
             |_| AST::OperatorMultiply;
         "divide" => lexemes "/" =>
             |_| AST::OperatorDivide;
+        "multiply" => lexemes "**" =>
+            |_| AST::OperatorPotentiate;
 
         "cell" => lexemes "CELL" =>
             |lexemes| {

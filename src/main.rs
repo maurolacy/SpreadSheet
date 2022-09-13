@@ -37,4 +37,11 @@ fn main() {
 
     sheet.set_cell("A3", "+-2");
     sheet.set_cell("A3", "3//2");
+    sheet.set_cell("A3", "**2");
+
+    // Power
+    let a3 = "3**A2+0.1";
+    sheet.set_cell("A3", a3);
+    let res = sheet.get_cell("A3").unwrap();
+    println!("{} = {}", a3, res);
 }
