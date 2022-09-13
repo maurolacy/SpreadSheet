@@ -44,4 +44,29 @@ fn main() {
     sheet.set_cell("A3", a3);
     let res = sheet.get_cell("A3").unwrap();
     println!("{} = {}", a3, res);
+
+    // Parentheses
+    let a3 = "3**(A2+0.1)";
+    sheet.set_cell("A3", a3);
+    let res = sheet.get_cell("A3").unwrap();
+    println!("{} = {}", a3, res);
+
+    let a3 = "3**((A2+1)*0.1*(1+2))";
+    sheet.set_cell("A3", a3);
+    let res = sheet.get_cell("A3").unwrap();
+    println!("{} = {}", a3, res);
+
+    // Broken cases
+    let a3 = "3**((A2+1)*0.1*(1+2)";
+    sheet.set_cell("A3", a3);
+    let _res = sheet.get_cell("A3");
+
+    let a3 = "(A2+1))";
+    sheet.set_cell("A3", a3);
+    let _res = sheet.get_cell("A3");
+
+    let a3 = "3**(A2+0.1+0.2)";
+    sheet.set_cell("A3", a3);
+    let res = sheet.get_cell("A3").unwrap();
+    println!("{} = {}", a3, res);
 }

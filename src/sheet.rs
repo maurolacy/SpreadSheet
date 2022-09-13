@@ -19,6 +19,9 @@ pub enum AST {
     OperatorDivide,
     OperatorPotentiate,
     UnaryOperation(Vec<AST>),
+    Parentheses(Vec<AST>),
+    LeftParenthesis,
+    RightParenthesis,
 }
 
 pub struct SpreadSheet {
@@ -42,12 +45,16 @@ impl SpreadSheet {
                 "DEFAULT" | "*" = string "*";
                 "DEFAULT" | "/" = string "/";
                 "DEFAULT" | "**" = string "**";
+                "DEFAULT" | "(" = string "(";
+                "DEFAULT" | ")" = string ")";
                 "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
             ),
             grammar: santiago::grammar!(
                 "expr" => rules "cell";
                 "expr" => rules "float";
                 "expr" => rules "int";
+
+                "expr" => rules "leftp" "expr" "rightp" => AST::Parentheses;
 
                 "expr" => rules "expr" "add" "expr" =>
                     AST::BinaryOperation;
@@ -87,6 +94,14 @@ impl SpreadSheet {
                     |lexemes| {
                         let value = str::parse(&lexemes[0].raw).unwrap();
                         AST::Int(value)
+                    };
+                "leftp" => lexemes "(" =>
+                    |_| {
+                        AST::LeftParenthesis
+                    };
+                "rightp" => lexemes ")" =>
+                    |_| {
+                        AST::RightParenthesis
                     };
 
                 Associativity::Left => rules "add" "subtract";
@@ -188,6 +203,7 @@ impl SpreadSheet {
                 AST::OperatorSubtract => -self.eval(&args[1]),
                 _ => unreachable!(),
             },
+            AST::Parentheses(args) => self.eval(&args[1]),
             _ => unreachable!(),
         }
     }
