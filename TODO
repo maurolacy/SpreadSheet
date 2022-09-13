@@ -1,16 +1,18 @@
-- Add unit tests
+- Add unit tests!
 
 - Support more operators
-  Unary minus / plus
+  Unary minus / plus (done)
   Exponentiation / Powers
+  Trigonometric functions
   ...
 
 - Improve caching
-  - Use a cached crate
-  - Cache operations as well, not only cells
+  - Use a caching crate (cached or similar)
+  - Cache operations as well, not only cells (caching as part of the AST)
 
 - Add support for strings / string operations
   - String concatenation (through +)
-  - This means, variable return types: Discriminate between int and float as well then
-
-- Add support for the formula (^=) syntax
+  - This means, variable return types
+    - Discriminate between int and float results as well
+  - Add support for the formula (^=) syntax
+    - Literal (string) if not formula
