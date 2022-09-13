@@ -1,5 +1,6 @@
 use santiago::lexer::LexerRules;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use santiago::grammar::Associativity;
@@ -10,6 +11,9 @@ pub struct SpreadSheet {
     lexer: LexerRules,
     grammar: Grammar<AST>,
     cells: HashMap<String, Rc<Tree<AST>>>,
+    cells_cache: RefCell<HashMap<String, f64>>,
+    cells_deps: RefCell<HashMap<String, HashSet<String>>>,
+    cells_rev_deps: RefCell<HashMap<String, HashSet<String>>>,
 }
 
 impl SpreadSheet {
@@ -18,22 +22,68 @@ impl SpreadSheet {
             lexer: lexer_rules(),
             grammar: grammar(),
             cells: HashMap::new(),
+            cells_cache: RefCell::new(HashMap::new()),
+            cells_deps: RefCell::new(HashMap::new()),
+            cells_rev_deps: RefCell::new(HashMap::new()),
         }
     }
 
     pub(crate) fn get_cell(&self, cell: &str) -> Option<f64> {
+        let cache = self.cells_cache.borrow();
+        let value = cache.get(cell);
+        if value.is_some() {
+            return value.cloned();
+        }
+        drop(cache);
         let tree = self.cells.get(cell);
-        tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()))
+        let value = tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()));
+        value.map(|v| {
+            let mut cache = self.cells_cache.borrow_mut();
+            cache.insert(cell.to_string(), v);
+        });
+        value
     }
 
     pub(crate) fn set_cell(&mut self, cell: &str, value: &str) {
         // Lex value
         let lexemes = santiago::lexer::lex(&self.lexer, value).unwrap();
+
+        // Borrow direct and reverse deps
+        let mut deps = self.cells_deps.borrow_mut();
+        let mut rev_deps = self.cells_rev_deps.borrow_mut();
+        // First, remove all the *currently* (ascendant) dependent cells
+        for cell in deps.get(cell).unwrap_or(&HashSet::new()) {
+            rev_deps.get_mut(cell).map(|cells| cells.remove(cell));
+        }
+
+        // Reset deps
+        deps.insert(cell.to_string(), HashSet::new());
+        // Then, add all the *newly* (ascendant) dependent cells
+        let cell_deps = deps.entry(cell.to_string()).or_insert_with(HashSet::new);
+        for lexeme in lexemes.iter() {
+            if lexeme.kind == "CELL" {
+                if lexeme.raw == cell {
+                    panic!("Circular dependency detected: {}", cell);
+                }
+                cell_deps.insert(lexeme.raw.clone());
+                let cell_rev_deps = rev_deps
+                    .entry(lexeme.raw.to_string())
+                    .or_insert_with(HashSet::new);
+                cell_rev_deps.insert(cell.to_string());
+            }
+        }
         // Parse value
         let parse_trees = santiago::parser::parse(&self.grammar, &lexemes).unwrap();
         let parse_tree = parse_trees.first().unwrap();
-        // Insert corresponding cell type
+        // Store cell
         self.cells.insert(cell.to_string(), parse_tree.clone());
+        // Invalidate cache
+        let mut cache = self.cells_cache.borrow_mut();
+        cache.remove(cell);
+        // Invalidate all the dependent cells
+        for rev_cell in rev_deps.get(cell).unwrap_or(&HashSet::new()) {
+            cache.remove(rev_cell);
+        }
     }
 
     pub fn eval(&self, value: &AST) -> f64 {
