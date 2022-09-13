@@ -1,2 +1,3 @@
 # SpreadSheet
-Spreadsheet in Rust with expressions and caching
+
+A Spreadsheet in Rust with expressions and caching.
