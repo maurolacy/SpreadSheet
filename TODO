@@ -1,0 +1,16 @@
+- Add unit tests
+
+- Support more operators
+  Unary minus / plus
+  Exponentiation / Powers
+  ...
+
+- Improve caching
+  - Use a cached crate
+  - Cache operations as well, not only cells
+
+- Add support for strings / string operations
+  - String concatenation (through +)
+  - This means, variable return types: Discriminate between int and float as well then
+
+- Add support for the formula (^=) syntax
