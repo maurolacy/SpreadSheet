@@ -37,10 +37,10 @@ impl SpreadSheet {
         drop(cache);
         let tree = self.cells.get(cell);
         let value = tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()));
-        value.map(|v| {
+        if let Some(v) = value {
             let mut cache = self.cells_cache.borrow_mut();
             cache.insert(cell.to_string(), v);
-        });
+        };
         value
     }
 
@@ -59,7 +59,7 @@ impl SpreadSheet {
         // Reset deps
         deps.insert(cell.to_string(), HashSet::new());
         // Then, add all the *newly* (ascendant) dependent cells
-        let cell_deps = deps.entry(cell.to_string()).or_insert_with(HashSet::new);
+        let cell_deps = deps.get_mut(cell).unwrap();
         for lexeme in lexemes.iter() {
             if lexeme.kind == "CELL" {
                 if lexeme.raw == cell {
