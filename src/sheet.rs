@@ -63,7 +63,8 @@ impl SpreadSheet {
         for lexeme in lexemes.iter() {
             if lexeme.kind == "CELL" {
                 if lexeme.raw == cell {
-                    panic!("Circular dependency detected: {}", cell);
+                    println!("Circular dependency detected: {}", cell);
+                    return;
                 }
                 cell_deps.insert(lexeme.raw.clone());
                 let cell_rev_deps = rev_deps
@@ -73,8 +74,17 @@ impl SpreadSheet {
             }
         }
         // Parse value
-        let parse_trees = santiago::parser::parse(&self.grammar, &lexemes).unwrap();
-        let parse_tree = parse_trees.first().unwrap();
+        let res = santiago::parser::parse(&self.grammar, &lexemes);
+        if res.is_err() {
+            println!("Error in {}: {:?}", value, res.unwrap_err());
+            return;
+        }
+        let parse_tree = res.unwrap();
+        if parse_tree.len() != 1 {
+            println!("Error: Invalid expression: {}", value);
+            return;
+        }
+        let parse_tree = parse_tree.first().unwrap();
         // Store cell
         self.cells.insert(cell.to_string(), parse_tree.clone());
         // Invalidate cache
