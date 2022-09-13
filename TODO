@@ -1,7 +1,7 @@
 - Add unit tests!
+- Better error handling (return errors)
 
 - Support more operators
-  Unary minus / plus (done)
   Exponentiation / Powers
   Trigonometric functions
   ...
