@@ -1,9 +1,13 @@
 - Add unit tests!
 - Better error handling (return errors)
 
+- Support parentheses
+
 - Support more operators
-  Exponentiation / Powers
-  Trigonometric functions
+  Powers (done)
+  Exponentiation (exp)
+  Trigonometric functions (sin, cos, tan)
+  Inverse trigonometric functions (asin, acos, atan)
   ...
 
 - Improve caching
