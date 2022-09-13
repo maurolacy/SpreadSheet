@@ -98,6 +98,11 @@ impl SpreadSheet {
                 AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
                 _ => unreachable!(),
             },
+            AST::UnaryOperation(args) => match &args[0] {
+                AST::OperatorAdd => self.eval(&args[1]),
+                AST::OperatorSubtract => -self.eval(&args[1]),
+                _ => unreachable!(),
+            },
             _ => unreachable!(),
         }
     }
@@ -126,6 +131,7 @@ pub enum AST {
     OperatorSubtract,
     OperatorMultiply,
     OperatorDivide,
+    UnaryOperation(Vec<AST>),
 }
 
 pub fn grammar() -> Grammar<AST> {
@@ -142,6 +148,11 @@ pub fn grammar() -> Grammar<AST> {
             AST::BinaryOperation;
         "expr" => rules "expr" "divide" "expr"=>
             AST::BinaryOperation;
+
+        "expr" => rules "add" "expr" =>
+            AST::UnaryOperation;
+        "expr" => rules "subtract" "expr" =>
+            AST::UnaryOperation;
 
         "add" => lexemes "+" =>
             |_| AST::OperatorAdd;

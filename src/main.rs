@@ -26,8 +26,12 @@ fn main() {
 
     // Circular dep detected
     // sheet.set_cell("A3", "1 + A3");
-    sheet.set_cell("A3", "A2");
 
+    // Unary ops
+    sheet.set_cell("A3", "+2");
+    let res = sheet.get_cell("A3").unwrap();
+    println!("A3 = {}", res);
+    sheet.set_cell("A3", "-2");
     let res = sheet.get_cell("A3").unwrap();
     println!("A3 = {}", res);
 }
