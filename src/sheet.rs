@@ -40,11 +40,7 @@ impl SpreadSheet {
         match value {
             AST::Int(int) => *int as _,
             AST::Float(float) => *float,
-            AST::Cell(cell) => {
-                let tree = self.cells.get(cell);
-                tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()))
-                    .unwrap_or_default()
-            }
+            AST::Cell(cell) => self.get_cell(cell).unwrap_or_default(),
             AST::BinaryOperation(args) => match &args[1] {
                 AST::OperatorAdd => self.eval(&args[0]) + self.eval(&args[2]),
                 AST::OperatorSubtract => self.eval(&args[0]) - self.eval(&args[2]),
