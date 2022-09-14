@@ -35,6 +35,12 @@ pub struct SpreadSheet {
     cells_rev_deps: RefCell<HashMap<String, HashSet<String>>>,
 }
 
+impl Default for SpreadSheet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpreadSheet {
     pub fn new() -> Self {
         Self {
