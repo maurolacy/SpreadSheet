@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::error::Error;
+use crate::error::Error::{CircularDependency, InvalidExpression};
 use santiago::grammar::Associativity;
 use santiago::grammar::Grammar;
 use santiago::parser::Tree;
@@ -130,20 +132,14 @@ impl SpreadSheet {
         value
     }
 
-    pub fn set_cell(&mut self, cell: &str, value: &str) {
+    pub fn set_cell<'a>(&mut self, cell: &'a str, value: &'a str) -> Result<(), Error<'a>> {
         // Lex value
-        let lexemes = santiago::lexer::lex(&self.lexer, value).unwrap();
+        let lexemes = santiago::lexer::lex(&self.lexer, value)?;
 
         // Parse value
-        let res = santiago::parser::parse(&self.grammar, &lexemes);
-        if res.is_err() {
-            println!("Error in {}: {:?}", value, res.unwrap_err());
-            return;
-        }
-        let parse_tree = res.unwrap();
+        let parse_tree = santiago::parser::parse(&self.grammar, &lexemes)?;
         if parse_tree.len() != 1 {
-            println!("Error: Invalid expression: {}", value);
-            return;
+            return Err(InvalidExpression(value));
         }
         let parse_tree = parse_tree.first().unwrap();
 
@@ -162,8 +158,7 @@ impl SpreadSheet {
         for lexeme in lexemes.iter() {
             if lexeme.kind == "CELL" {
                 if lexeme.raw == cell {
-                    println!("Circular dependency detected: {}", cell);
-                    return;
+                    return Err(CircularDependency(cell));
                 }
                 cell_deps.insert(lexeme.raw.clone());
                 let cell_rev_deps = rev_deps
@@ -183,6 +178,7 @@ impl SpreadSheet {
         for rev_cell in rev_deps.get(cell).unwrap_or(&HashSet::new()) {
             cache.remove(rev_cell);
         }
+        Ok(())
     }
 
     pub fn eval(&self, value: &AST) -> f64 {
