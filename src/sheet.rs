@@ -243,6 +243,25 @@ mod tests {
     }
 
     #[test]
+    fn sheet_cache_invalidation_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let b4 = "5";
+        sheet.set_cell("B4", b4).unwrap();
+
+        let a3 = "1 + B4";
+        sheet.set_cell("A3", a3).unwrap();
+
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 6.0);
+
+        sheet.set_cell("B4", "2").unwrap();
+
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 3.0);
+    }
+
+    #[test]
     fn sheet_unary_ops_work() {
         let mut sheet = SpreadSheet::new();
 
