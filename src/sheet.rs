@@ -204,3 +204,179 @@ impl SpreadSheet {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Error;
+
+    #[test]
+    fn sheet_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let a2 = "1 + 2";
+        sheet.set_cell("A2", a2).unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, 3.0);
+    }
+
+    #[test]
+    fn sheet_unset_cell_defaults_to_zero() {
+        let mut sheet = SpreadSheet::new();
+
+        let a3 = "1 + B4";
+        sheet.set_cell("A3", a3).unwrap();
+
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 1.0);
+
+        sheet.set_cell("B4", "2").unwrap();
+
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 3.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_work() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary ops
+        sheet.set_cell("A3", "+2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 2.0);
+        sheet.set_cell("A3", "-2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -2.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_work_with_parentheses() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary ops
+        sheet.set_cell("A3", "+(2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 2.0);
+        sheet.set_cell("A3", "-(2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -2.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_work_with_parentheses_and_spaces() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary ops
+        sheet.set_cell("A3", "+ (2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 2.0);
+        sheet.set_cell("A3", "- (2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -2.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_work_with_parentheses_and_spaces_and_operators() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary ops
+        sheet.set_cell("A3", "+ (2 + 2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 4.0);
+        sheet.set_cell("A3", "- (2 + 2)").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -4.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_algebraic_works() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary ops
+        sheet.set_cell("A3", "+2 + 2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 4.0);
+        sheet.set_cell("A3", "-2 + 2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 0.0);
+    }
+
+    #[test]
+    fn sheet_unary_ops_syntax_errors() {
+        let mut sheet = SpreadSheet::new();
+
+        // Unary errors
+        let err = sheet.set_cell("A3", "+-2");
+        assert_eq!(err, Err(InvalidExpression("+-2")));
+        let err = sheet.set_cell("A3", "3//2");
+        assert!(matches!(err, Err(Error::Parser(_))));
+        let err = sheet.set_cell("A3", "**2");
+        assert!(matches!(err, Err(Error::Parser(_))));
+    }
+
+    #[test]
+    fn sheet_power_works() {
+        let mut sheet = SpreadSheet::new();
+
+        sheet.set_cell("A2", "2").unwrap();
+        // Power
+        let a3 = "3**A2+0.1";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 9.1);
+    }
+
+    #[test]
+    fn sheet_parentheses_work() {
+        let mut sheet = SpreadSheet::new();
+
+        sheet.set_cell("A2", "3").unwrap();
+        // Parentheses
+        let a3 = "3**(A2+1.)";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 81.);
+
+        let a3 = "3**((A2+1)*0.1*(1+2))";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 3.7371928188465526);
+
+        let a3 = "3**(A2+0.1+0.2)";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 37.540507598529565);
+    }
+
+    // Broken parentheses
+    #[test]
+    fn sheet_parentheses_syntax_errors() {
+        let mut sheet = SpreadSheet::new();
+
+        let err = sheet.set_cell("A3", "3**((A2+1)*0.1*(1+2)");
+        assert!(matches!(err, Err(Error::Parser(_))));
+        let err = sheet.set_cell("A3", "(A2+1))");
+        assert!(matches!(err, Err(Error::Parser(_))));
+    }
+
+    #[test]
+    fn sheet_naive_circular_dep_detected() {
+        let mut sheet = SpreadSheet::new();
+
+        // (Naïve) Circular dep detected
+        let err = sheet.set_cell("A3", "1 + A3");
+        assert_eq!(err, Err(CircularDependency("A3")));
+    }
+
+    #[ignore]
+    #[test]
+    fn sheet_circular_dep_currently_panics() {
+        let mut sheet = SpreadSheet::new();
+
+        // Circular dep (stack overflow)
+        sheet.set_cell("A3", "A1").unwrap();
+        sheet.set_cell("A1", "A3 + 1").unwrap();
+
+        sheet.get_cell("A3");
+    }
+}
