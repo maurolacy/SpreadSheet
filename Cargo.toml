@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Mauro Lacy <maurolacy@users.noreply.github.com>"]
 edition = "2021"
 description = "Implement a spread-sheet with caching and expressions"
-license = "Apache-2.0"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/maurolacy/SpreadSheet"
 
 [lib]
