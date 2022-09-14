@@ -1,5 +1,6 @@
 - Better error handling (return errors) (done)
-- Add unit tests!
+- Add unit tests (done)
+- Turn into a library (done)
 
 - Support parentheses (done)
 
