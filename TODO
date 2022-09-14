@@ -1,14 +1,19 @@
+- Better error handling (return errors) (done)
 - Add unit tests!
-- Better error handling (return errors)
 
-- Support parentheses
+- Support parentheses (done)
 
 - Support more operators
   Powers (done)
   Exponentiation (exp)
+  Logarithms (log, log10, log2, ln)
   Trigonometric functions (sin, cos, tan)
   Inverse trigonometric functions (asin, acos, atan)
   ...
+
+- Circular dependencies detection
+  - naïve (done)
+  - full
 
 - Improve caching
   - Use a caching crate (cached or similar)
@@ -18,5 +23,4 @@
   - String concatenation (through +)
   - This means, variable return types
     - Discriminate between int and float results as well
-  - Add support for the formula (^=) syntax
-    - Literal (string) if not formula
+  - Add support for the formula (^=) syntax - Literal (string) if not formula
