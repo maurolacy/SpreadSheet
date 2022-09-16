@@ -12,9 +12,7 @@
   Inverse trigonometric functions (asin, acos, atan)
   ...
 
-- Circular dependencies detection
-  - naïve (done)
-  - full
+- Circular dependencies detection (done)
 
 - Improve caching
   - Use a caching crate (cached or similar)
@@ -25,3 +23,5 @@
   - This means, variable return types
     - Discriminate between int and float results as well
   - Add support for the formula (^=) syntax - Literal (string) if not formula
+
+- Stress test the sheet with many cells
