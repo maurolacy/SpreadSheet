@@ -15,7 +15,7 @@ pub enum Error<'a> {
     InvalidExpression(&'a str),
 
     #[error("Circular dependency detected: {0}")]
-    CircularDependency(&'a str),
+    CyclicDependency(&'a str),
 }
 
 impl<'a> From<LexerError> for Error<'a> {

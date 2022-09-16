@@ -1,13 +1,14 @@
-use santiago::lexer::LexerRules;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::error::Error;
-use crate::error::Error::{CircularDependency, InvalidExpression};
 use santiago::grammar::Associativity;
 use santiago::grammar::Grammar;
+use santiago::lexer::LexerRules;
 use santiago::parser::Tree;
+
+use crate::error::Error;
+use crate::error::Error::{CyclicDependency, InvalidExpression};
 
 #[derive(Debug)]
 pub enum AST {
@@ -164,13 +165,27 @@ impl SpreadSheet {
         for lexeme in lexemes.iter() {
             if lexeme.kind == "CELL" {
                 if lexeme.raw == cell {
-                    return Err(CircularDependency(cell));
+                    return Err(CyclicDependency(cell));
                 }
                 cell_deps.insert(lexeme.raw.clone());
                 let cell_rev_deps = rev_deps
                     .entry(lexeme.raw.to_string())
                     .or_insert_with(HashSet::new);
                 cell_rev_deps.insert(cell.to_string());
+            }
+        }
+        // Check the dependency graph for cycles
+        let empty = HashSet::new();
+        let mut visited = HashSet::new();
+        let mut stack = vec![cell];
+        while let Some(c) = stack.pop() {
+            if visited.contains(c) {
+                return Err(CyclicDependency(cell));
+            }
+            visited.insert(c);
+            let cell_deps = deps.get(c).unwrap_or(&empty);
+            for c in cell_deps {
+                stack.push(c);
             }
         }
 
@@ -390,18 +405,17 @@ mod tests {
 
         // (Naïve) Circular dep detected
         let err = sheet.set_cell("A3", "1 + A3");
-        assert_eq!(err, Err(CircularDependency("A3")));
+        assert_eq!(err, Err(CyclicDependency("A3")));
     }
 
-    #[ignore]
     #[test]
-    fn sheet_circular_dep_currently_panics() {
+    fn sheet_circular_dep_detected() {
         let mut sheet = SpreadSheet::new();
 
-        // Circular dep (stack overflow)
+        // Set a non-trivial circular dep
         sheet.set_cell("A3", "A1").unwrap();
-        sheet.set_cell("A1", "A3 + 1").unwrap();
+        let err = sheet.set_cell("A1", "A3 + 1").unwrap_err();
 
-        sheet.get_cell("A3");
+        assert_eq!(err, CyclicDependency("A1"));
     }
 }
