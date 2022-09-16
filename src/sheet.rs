@@ -73,6 +73,8 @@ impl SpreadSheet {
                     AST::BinaryOperation;
                 "expr" => rules "expr" "divide" "expr"=>
                     AST::BinaryOperation;
+                "expr" => rules "expr" "power" "expr"=>
+                    AST::BinaryOperation;
 
                 "expr" => rules "unary_add" "expr" =>
                     AST::UnaryOperation;
@@ -91,7 +93,7 @@ impl SpreadSheet {
                     |_| AST::OperatorMultiply;
                 "divide" => lexemes "/" =>
                     |_| AST::OperatorDivide;
-                "multiply" => lexemes "**" =>
+                "power" => lexemes "**" =>
                     |_| AST::OperatorPotentiate;
 
                 "cell" => lexemes "CELL" =>
@@ -120,6 +122,7 @@ impl SpreadSheet {
                 Associativity::Left => rules "add" "subtract";
                 Associativity::Left => rules "multiply" "divide";
                 Associativity::Left => rules "unary_add" "unary_subtract";
+                Associativity::Left => rules "power";
             ),
             cells: HashMap::new(),
             cells_cache: RefCell::new(HashMap::new()),
@@ -406,9 +409,19 @@ mod tests {
     fn sheet_power_works() {
         let mut sheet = SpreadSheet::new();
 
-        sheet.set_cell("A2", "2").unwrap();
         // Power
+        let a3 = "(-1)**2";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 1.);
+
+        let a3 = "-1**2";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -1.);
+
         let a3 = "3**A2+0.1";
+        sheet.set_cell("A2", "2").unwrap();
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, 9.1);
