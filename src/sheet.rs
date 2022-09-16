@@ -173,6 +173,22 @@ impl SpreadSheet {
         }
 
         // Check the dependency graph for cycles
+        Self::cyclic(cell, &deps)?;
+
+        // Store cell
+        self.cells.insert(cell.to_string(), parse_tree.clone());
+
+        // Invalidate cache
+        let mut cache = self.cells_cache.borrow_mut();
+        cache.remove(cell);
+        // Invalidate all the dependent cells
+        for rev_cell in rev_deps.get(cell).unwrap_or(&HashSet::new()) {
+            cache.remove(rev_cell);
+        }
+        Ok(())
+    }
+
+    fn cyclic<'a>(cell: &'a str, deps: &HashMap<String, HashSet<String>>) -> Result<(), Error<'a>> {
         let empty = HashSet::new();
         let mut visited = HashSet::new();
         let mut stack = vec![cell];
@@ -185,17 +201,6 @@ impl SpreadSheet {
             for c in cell_deps {
                 stack.push(c);
             }
-        }
-
-        // Store cell
-        self.cells.insert(cell.to_string(), parse_tree.clone());
-
-        // Invalidate cache
-        let mut cache = self.cells_cache.borrow_mut();
-        cache.remove(cell);
-        // Invalidate all the dependent cells
-        for rev_cell in rev_deps.get(cell).unwrap_or(&HashSet::new()) {
-            cache.remove(rev_cell);
         }
         Ok(())
     }
