@@ -121,7 +121,7 @@ impl SpreadSheet {
 
                 Associativity::Left => rules "add" "subtract";
                 Associativity::Left => rules "multiply" "divide";
-                Associativity::Left => rules "unary_add" "unary_subtract";
+                Associativity::Right => rules "unary_add" "unary_subtract";
                 Associativity::Left => rules "power";
             ),
             cells: HashMap::new(),
@@ -353,16 +353,15 @@ mod tests {
     }
 
     #[test]
-    fn sheet_ops_syntax_errors() {
+    fn sheet_unary_right_associative_works() {
         let mut sheet = SpreadSheet::new();
 
-        // Unary errors
-        let err = sheet.set_cell("A3", "++2");
-        assert_eq!(err, Err(InvalidExpression("++2")));
-        let err = sheet.set_cell("A3", "+-2");
-        assert_eq!(err, Err(InvalidExpression("+-2")));
+        // Unary works like a binary op with zero to the left
+        sheet.set_cell("A3", "+ +2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 2.);
 
-        // But binary works
+        // Same as binary
         sheet.set_cell("A3", "0 + +2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, 2.);
@@ -372,16 +371,27 @@ mod tests {
         sheet.set_cell("A3", "0 - -2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, 2.);
+        sheet.set_cell("A3", "3 + ++2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 5.);
+        sheet.set_cell("A3", "3 / + +2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 3. / 2.);
+        sheet.set_cell("A3", "3 / ++2").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 3. / 2.);
+    }
+
+    #[test]
+    fn sheet_binary_errors() {
+        let mut sheet = SpreadSheet::new();
 
         // Binary errors
-        let err = sheet.set_cell("A3", "3 + ++2");
-        assert!(matches!(err, Err(Error::InvalidExpression(_))));
-        let err = sheet.set_cell("A3", "3 / ++2");
-        assert!(matches!(err, Err(Error::InvalidExpression(_))));
         let err = sheet.set_cell("A3", "3//2");
         assert!(matches!(err, Err(Error::Parser(_))));
         let err = sheet.set_cell("A3", "**2");
         assert!(matches!(err, Err(Error::Parser(_))));
+        // TODO? Add more
     }
 
     #[test]
