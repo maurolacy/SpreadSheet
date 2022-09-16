@@ -413,6 +413,14 @@ mod tests {
         sheet.set_cell("A3", "1 / -3").unwrap();
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, 1.0 / -3.0);
+
+        sheet.set_cell("A3", "1 / 0").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, f64::INFINITY);
+
+        sheet.set_cell("A3", "0 / 0").unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res.to_string(), f64::NAN.to_string());
     }
 
     #[test]
