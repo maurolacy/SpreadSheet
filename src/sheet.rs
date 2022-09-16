@@ -164,9 +164,6 @@ impl SpreadSheet {
         let cell_deps = deps.get_mut(cell).unwrap();
         for lexeme in lexemes.iter() {
             if lexeme.kind == "CELL" {
-                if lexeme.raw == cell {
-                    return Err(CyclicDependency(cell));
-                }
                 cell_deps.insert(lexeme.raw.clone());
                 let cell_rev_deps = rev_deps
                     .entry(lexeme.raw.to_string())
@@ -174,6 +171,7 @@ impl SpreadSheet {
                 cell_rev_deps.insert(cell.to_string());
             }
         }
+
         // Check the dependency graph for cycles
         let empty = HashSet::new();
         let mut visited = HashSet::new();
