@@ -186,12 +186,17 @@ impl SpreadSheet {
         // Store cell
         self.cells.insert(cell.to_string(), parse_tree.clone());
 
-        // Invalidate cache
+        // Check the reverse dependency graph and invalidate cached values
         let mut cache = self.cells_cache.borrow_mut();
-        cache.remove(cell);
-        // Invalidate all the dependent cells
-        for rev_cell in rev_deps.get(cell).unwrap_or(&HashSet::new()) {
-            cache.remove(rev_cell);
+        let mut to_invalidate = HashSet::new();
+        to_invalidate.insert(cell.to_string());
+        while !to_invalidate.is_empty() {
+            let cell = to_invalidate.iter().next().unwrap().clone();
+            to_invalidate.remove(&cell);
+            cache.remove(&cell);
+            for cell in rev_deps.get(&cell).unwrap_or(&HashSet::new()) {
+                to_invalidate.insert(cell.clone());
+            }
         }
         Ok(())
     }
