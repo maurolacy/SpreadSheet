@@ -163,8 +163,8 @@ impl SpreadSheet {
             let mut deps = self.cells_deps.borrow_mut();
             let mut rev_deps = self.cells_rev_deps.borrow_mut();
             // First, remove all the *currently* (ascendant) dependent cells
-            for cell in deps.get(cell).unwrap_or(&HashSet::new()) {
-                rev_deps.get_mut(cell).map(|cells| cells.remove(cell));
+            for c in deps.get(cell).unwrap_or(&HashSet::new()) {
+                rev_deps.get_mut(c).map(|cells| cells.remove(cell));
             }
 
             // Reset deps
