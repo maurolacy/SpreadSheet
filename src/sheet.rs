@@ -420,6 +420,11 @@ mod tests {
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, -1.);
 
+        let a3 = "3**2**3";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 729.);
+
         let a3 = "3**A2+0.1";
         sheet.set_cell("A2", "2").unwrap();
         sheet.set_cell("A3", a3).unwrap();
