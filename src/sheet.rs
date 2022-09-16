@@ -435,6 +435,22 @@ mod tests {
         let res = sheet.get_cell("A3").unwrap();
         assert_eq!(res, 729.);
 
+        // Zero powers
+        let a3 = "0**3";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 0.);
+
+        let a3 = "3**0";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 1.);
+
+        let a3 = "0**0";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 1.); // FIXME: Should be indeterminate / NaN
+
         let a3 = "3**A2+0.1";
         sheet.set_cell("A2", "2").unwrap();
         sheet.set_cell("A3", a3).unwrap();
