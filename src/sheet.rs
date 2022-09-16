@@ -162,7 +162,7 @@ impl SpreadSheet {
             // Borrow direct and reverse deps
             let mut deps = self.cells_deps.borrow_mut();
             let mut rev_deps = self.cells_rev_deps.borrow_mut();
-            // First, remove all the *currently* (ascendant) dependent cells
+            // First, remove all the *currently* (ascendant, i.e. reverse) dependent cells (cache disassociation)
             for c in deps.get(cell).unwrap_or(&HashSet::new()) {
                 rev_deps.get_mut(c).map(|cells| cells.remove(cell));
             }
@@ -173,7 +173,9 @@ impl SpreadSheet {
             let cell_deps = deps.get_mut(cell).unwrap();
             for lexeme in lexemes.iter() {
                 if lexeme.kind == "CELL" {
+                    // Rebuild deps
                     cell_deps.insert(lexeme.raw.clone());
+                    // Build/update new reverse deps
                     let cell_rev_deps = rev_deps
                         .entry(lexeme.raw.to_string())
                         .or_insert_with(HashSet::new);
@@ -282,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn sheet_cache_invalidation_works() {
+    fn sheet_cache_invalidation_one_level_works() {
         let mut sheet = SpreadSheet::new();
 
         let b4 = "5";
@@ -301,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn sheet_cache_invalidation_really_works() {
+    fn sheet_cache_invalidation_transitivity_works() {
         let mut sheet = SpreadSheet::new();
 
         let a3 = "3";
