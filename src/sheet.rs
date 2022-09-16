@@ -288,6 +288,28 @@ mod tests {
     }
 
     #[test]
+    fn sheet_cache_invalidation_really_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let a3 = "3";
+        sheet.set_cell("A3", a3).unwrap();
+
+        let a2 = "A3 + 3";
+        sheet.set_cell("A2", a2).unwrap();
+
+        let a1 = "A2 + 2";
+        sheet.set_cell("A1", a1).unwrap();
+
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, 8.0);
+
+        sheet.set_cell("A3", "4").unwrap();
+
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, 9.0);
+    }
+
+    #[test]
     fn sheet_unary_ops_work() {
         let mut sheet = SpreadSheet::new();
 
