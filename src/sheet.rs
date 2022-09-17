@@ -32,8 +32,8 @@ pub struct SpreadSheet {
     grammar: Grammar<AST>,
     cells: HashMap<String, Rc<Tree<AST>>>,
     cells_cache: RefCell<HashMap<String, f64>>,
-    cells_deps: HashMap<String, HashSet<String>>,
-    cells_rev_deps: HashMap<String, HashSet<String>>,
+    cells_children: HashMap<String, HashSet<String>>,
+    cells_parents: HashMap<String, HashSet<String>>,
 }
 
 impl Default for SpreadSheet {
@@ -126,8 +126,8 @@ impl SpreadSheet {
             ),
             cells: HashMap::new(),
             cells_cache: RefCell::new(HashMap::new()),
-            cells_deps: HashMap::new(),
-            cells_rev_deps: HashMap::new(),
+            cells_children: HashMap::new(),
+            cells_parents: HashMap::new(),
         }
     }
 
@@ -159,27 +159,25 @@ impl SpreadSheet {
         let parse_tree = parse_tree.first().unwrap();
 
         {
-            // First, remove all the *currently* (ascendant, i.e. reverse) dependent cells (cache disassociation)
-            for c in self.cells_deps.get(cell).unwrap_or(&HashSet::new()) {
-                self.cells_rev_deps
+            // First, remove this cell from all of its parents (cache disassociation)
+            for c in self.cells_children.get(cell).unwrap_or(&HashSet::new()) {
+                self.cells_parents
                     .get_mut(c)
-                    .map(|cells| cells.remove(cell));
+                    .map(|parents| parents.remove(cell));
             }
 
-            // Reset deps
-            self.cells_deps.insert(cell.to_string(), HashSet::new());
-            // Then, add all the *newly* (ascendant) dependent cells
-            let cell_deps = self.cells_deps.get_mut(cell).unwrap();
+            // Reset children
+            self.cells_children.insert(cell.to_string(), HashSet::new());
+            // Then, add all the new cells to this cell's children and parents maps
+            let cell_children = self.cells_children.get_mut(cell).unwrap();
             for lexeme in lexemes.iter() {
                 if lexeme.kind == "CELL" {
-                    // Rebuild deps
-                    cell_deps.insert(lexeme.raw.clone());
-                    // Build/update new reverse deps
-                    let cell_rev_deps = self
-                        .cells_rev_deps
+                    cell_children.insert(lexeme.raw.clone());
+                    let cell_parents = self
+                        .cells_parents
                         .entry(lexeme.raw.to_string())
                         .or_insert_with(HashSet::new);
-                    cell_rev_deps.insert(cell.to_string());
+                    cell_parents.insert(cell.to_string());
                 }
             }
         }
@@ -187,10 +185,10 @@ impl SpreadSheet {
         // Check the dependency graph for cycles
         self.cyclic(cell)?;
 
-        // Store cell
+        // Store cell's syntax tree
         self.cells.insert(cell.to_string(), parse_tree.clone());
 
-        // Check the reverse dependency graph and invalidate cached values
+        // Check the parents sub-tree and invalidate cached values
         self.invalidate(cell);
         Ok(())
     }
@@ -203,7 +201,7 @@ impl SpreadSheet {
             let cell = to_invalidate.iter().next().unwrap().clone();
             to_invalidate.remove(&cell);
             cache.remove(&cell);
-            for cell in self.cells_rev_deps.get(&cell).unwrap_or(&HashSet::new()) {
+            for cell in self.cells_parents.get(&cell).unwrap_or(&HashSet::new()) {
                 to_invalidate.insert(cell.clone());
             }
         }
@@ -218,8 +216,7 @@ impl SpreadSheet {
                 return Err(CyclicDependency(cell));
             }
             visited.insert(c);
-            let cell_deps = self.cells_deps.get(c).unwrap_or(&empty);
-            for c in cell_deps {
+            for c in self.cells_children.get(c).unwrap_or(&empty) {
                 stack.push(c);
             }
         }
