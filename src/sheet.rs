@@ -32,8 +32,8 @@ pub struct SpreadSheet {
     grammar: Grammar<AST>,
     cells: HashMap<String, Rc<Tree<AST>>>,
     cells_cache: RefCell<HashMap<String, f64>>,
-    cells_deps: RefCell<HashMap<String, HashSet<String>>>,
-    cells_rev_deps: RefCell<HashMap<String, HashSet<String>>>,
+    cells_deps: HashMap<String, HashSet<String>>,
+    cells_rev_deps: HashMap<String, HashSet<String>>,
 }
 
 impl Default for SpreadSheet {
@@ -126,8 +126,8 @@ impl SpreadSheet {
             ),
             cells: HashMap::new(),
             cells_cache: RefCell::new(HashMap::new()),
-            cells_deps: RefCell::new(HashMap::new()),
-            cells_rev_deps: RefCell::new(HashMap::new()),
+            cells_deps: HashMap::new(),
+            cells_rev_deps: HashMap::new(),
         }
     }
 
@@ -159,24 +159,24 @@ impl SpreadSheet {
         let parse_tree = parse_tree.first().unwrap();
 
         {
-            // Borrow direct and reverse deps
-            let mut deps = self.cells_deps.borrow_mut();
-            let mut rev_deps = self.cells_rev_deps.borrow_mut();
             // First, remove all the *currently* (ascendant, i.e. reverse) dependent cells (cache disassociation)
-            for c in deps.get(cell).unwrap_or(&HashSet::new()) {
-                rev_deps.get_mut(c).map(|cells| cells.remove(cell));
+            for c in self.cells_deps.get(cell).unwrap_or(&HashSet::new()) {
+                self.cells_rev_deps
+                    .get_mut(c)
+                    .map(|cells| cells.remove(cell));
             }
 
             // Reset deps
-            deps.insert(cell.to_string(), HashSet::new());
+            self.cells_deps.insert(cell.to_string(), HashSet::new());
             // Then, add all the *newly* (ascendant) dependent cells
-            let cell_deps = deps.get_mut(cell).unwrap();
+            let cell_deps = self.cells_deps.get_mut(cell).unwrap();
             for lexeme in lexemes.iter() {
                 if lexeme.kind == "CELL" {
                     // Rebuild deps
                     cell_deps.insert(lexeme.raw.clone());
                     // Build/update new reverse deps
-                    let cell_rev_deps = rev_deps
+                    let cell_rev_deps = self
+                        .cells_rev_deps
                         .entry(lexeme.raw.to_string())
                         .or_insert_with(HashSet::new);
                     cell_rev_deps.insert(cell.to_string());
@@ -196,7 +196,6 @@ impl SpreadSheet {
     }
 
     fn invalidate(&mut self, cell: &str) {
-        let rev_deps = self.cells_rev_deps.borrow();
         let mut cache = self.cells_cache.borrow_mut();
         let mut to_invalidate = HashSet::new();
         to_invalidate.insert(cell.to_string());
@@ -204,7 +203,7 @@ impl SpreadSheet {
             let cell = to_invalidate.iter().next().unwrap().clone();
             to_invalidate.remove(&cell);
             cache.remove(&cell);
-            for cell in rev_deps.get(&cell).unwrap_or(&HashSet::new()) {
+            for cell in self.cells_rev_deps.get(&cell).unwrap_or(&HashSet::new()) {
                 to_invalidate.insert(cell.clone());
             }
         }
@@ -212,7 +211,6 @@ impl SpreadSheet {
 
     fn cyclic<'a>(&self, cell: &'a str) -> Result<(), Error<'a>> {
         let empty = HashSet::new();
-        let deps = self.cells_deps.borrow();
         let mut visited = HashSet::new();
         let mut stack = vec![cell];
         while let Some(c) = stack.pop() {
@@ -220,7 +218,7 @@ impl SpreadSheet {
                 return Err(CyclicDependency(cell));
             }
             visited.insert(c);
-            let cell_deps = deps.get(c).unwrap_or(&empty);
+            let cell_deps = self.cells_deps.get(c).unwrap_or(&empty);
             for c in cell_deps {
                 stack.push(c);
             }
