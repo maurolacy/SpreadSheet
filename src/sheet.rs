@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use santiago::grammar::Associativity;
 use santiago::grammar::Grammar;
-use santiago::lexer::LexerRules;
+use santiago::lexer::{Lexeme, LexerRules};
 use santiago::parser::Tree;
 
 use crate::error::Error;
@@ -158,29 +158,7 @@ impl SpreadSheet {
         }
         let parse_tree = parse_tree.first().unwrap();
 
-        {
-            // First, remove this cell from all of its parents (cache disassociation)
-            for c in self.cells_children.get(cell).unwrap_or(&HashSet::new()) {
-                self.cells_parents
-                    .get_mut(c)
-                    .map(|parents| parents.remove(cell));
-            }
-
-            // Reset children
-            self.cells_children.insert(cell.to_string(), HashSet::new());
-            // Then, add all the new cells to this cell's children and parents maps
-            let cell_children = self.cells_children.get_mut(cell).unwrap();
-            for lexeme in lexemes.iter() {
-                if lexeme.kind == "CELL" {
-                    cell_children.insert(lexeme.raw.clone());
-                    let cell_parents = self
-                        .cells_parents
-                        .entry(lexeme.raw.to_string())
-                        .or_insert_with(HashSet::new);
-                    cell_parents.insert(cell.to_string());
-                }
-            }
-        }
+        self.dependencies(cell, &lexemes);
 
         // Check the dependency graph for cycles
         self.cyclic(cell)?;
@@ -193,16 +171,26 @@ impl SpreadSheet {
         Ok(())
     }
 
-    fn invalidate(&mut self, cell: &str) {
-        let mut cache = self.cells_cache.borrow_mut();
-        let mut to_invalidate = HashSet::new();
-        to_invalidate.insert(cell.to_string());
-        while !to_invalidate.is_empty() {
-            let cell = to_invalidate.iter().next().unwrap().clone();
-            to_invalidate.remove(&cell);
-            cache.remove(&cell);
-            for cell in self.cells_parents.get(&cell).unwrap_or(&HashSet::new()) {
-                to_invalidate.insert(cell.clone());
+    fn dependencies(&mut self, cell: &str, lexemes: &[Rc<Lexeme>]) {
+        // First, remove this cell from all of its parents (cache disassociation)
+        for c in self.cells_children.get(cell).unwrap_or(&HashSet::new()) {
+            self.cells_parents
+                .get_mut(c)
+                .map(|parents| parents.remove(cell));
+        }
+
+        // Reset children
+        self.cells_children.insert(cell.to_string(), HashSet::new());
+        // Then, add all the new cells to this cell's children and parents maps
+        let cell_children = self.cells_children.get_mut(cell).unwrap();
+        for lexeme in lexemes.iter() {
+            if lexeme.kind == "CELL" {
+                cell_children.insert(lexeme.raw.clone());
+                let cell_parents = self
+                    .cells_parents
+                    .entry(lexeme.raw.to_string())
+                    .or_insert_with(HashSet::new);
+                cell_parents.insert(cell.to_string());
             }
         }
     }
@@ -221,6 +209,20 @@ impl SpreadSheet {
             }
         }
         Ok(())
+    }
+
+    fn invalidate(&mut self, cell: &str) {
+        let mut cache = self.cells_cache.borrow_mut();
+        let mut to_invalidate = HashSet::new();
+        to_invalidate.insert(cell.to_string());
+        while !to_invalidate.is_empty() {
+            let cell = to_invalidate.iter().next().unwrap().clone();
+            to_invalidate.remove(&cell);
+            cache.remove(&cell);
+            for cell in self.cells_parents.get(&cell).unwrap_or(&HashSet::new()) {
+                to_invalidate.insert(cell.clone());
+            }
+        }
     }
 
     pub fn eval(&self, value: &AST) -> f64 {
