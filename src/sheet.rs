@@ -158,10 +158,23 @@ impl SpreadSheet {
         }
         let parse_tree = parse_tree.first().unwrap();
 
+        // Backup cell's children and parents
+        let old_children = self.cells_children.get(cell).cloned();
+        let old_parents = self.cells_parents.clone();
+
+        // Update dependency graph
         self.dependencies(cell, &lexemes);
 
         // Check the dependency graph for cycles
-        self.cyclic(cell)?;
+        let res = self.cyclic(cell);
+        // Restore children and parents if cyclic
+        if res.is_err() {
+            self.cells_children.insert(cell.to_string(), old_children.unwrap_or_default());
+            self.cells_parents = old_parents;
+            return res;
+        }
+        drop(old_children);
+        drop(old_parents);
 
         // Store cell's syntax tree
         self.cells.insert(cell.to_string(), parse_tree.clone());
