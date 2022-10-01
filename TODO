@@ -1,28 +1,21 @@
-- Better error handling (return errors) (done)
-- Add unit tests (done)
-- Turn into a library (done)
-
-- Support parentheses (done)
-
 - Support more operators
-  Powers (done)
-  Exponentiation (exp)
   Logarithms (log, log10, log2, ln)
   Trigonometric functions (sin, cos, tan)
   Inverse trigonometric functions (asin, acos, atan)
   ...
 
-- Circular dependencies detection (done)
-
 - Improve caching
   - Use a caching crate (cached or similar)
   - Cache operations as well, not only cells (caching as part of the AST)
 
-- Add support for strings / string operations
-  - String concatenation (through +)
+- Add support for the formula (^=) syntax
+  - Literal (string) if not formula
+  - Add support for strings
+  - Add support for string operations
+    - String concatenation (through CONCAT)
+    - ...
   - This means, variable return types
-    - Discriminate between int and float results as well
-  - Add support for the formula (^=) syntax - Literal (string) if not formula
+    - Discriminate between string, int and float results
 
 - Stress test the sheet with many cells
 
