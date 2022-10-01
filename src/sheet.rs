@@ -8,7 +8,7 @@ use santiago::lexer::{Lexeme, LexerRules};
 use santiago::parser::Tree;
 
 use crate::error::Error;
-use crate::error::Error::{CyclicDependency, InvalidExpression};
+use crate::error::Error::{CyclicDependency, InvalidCellName, InvalidExpression};
 
 #[derive(Debug)]
 pub enum AST {
@@ -27,7 +27,10 @@ pub enum AST {
     RightParenthesis,
 }
 
+const CELL_NAME_PATTERN: &str = r"[A-Z]{1,2}[0-9]+";
+
 pub struct SpreadSheet {
+    cell_name_lexer: LexerRules,
     lexer: LexerRules,
     grammar: Grammar<AST>,
     cells: HashMap<String, Rc<Tree<AST>>>,
@@ -45,8 +48,11 @@ impl Default for SpreadSheet {
 impl SpreadSheet {
     pub fn new() -> Self {
         Self {
+            cell_name_lexer: santiago::lexer_rules!(
+                "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
+            ),
             lexer: santiago::lexer_rules!(
-                "DEFAULT" | "CELL" = pattern r"[A-Z][0-9]+";
+                "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
                 "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
                 "DEFAULT" | "INT" = pattern r"[0-9]+";
                 "DEFAULT" | "+" = string "+";
@@ -132,6 +138,9 @@ impl SpreadSheet {
     }
 
     pub fn get_cell(&self, cell: &str) -> Option<f64> {
+        // Lex name
+        santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell)).unwrap();
+
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
         if value.is_some() {
@@ -148,6 +157,9 @@ impl SpreadSheet {
     }
 
     pub fn set_cell<'a>(&mut self, cell: &'a str, value: &'a str) -> Result<(), Error<'a>> {
+        // Lex name
+        santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell))?;
+
         // Lex value
         let lexemes = santiago::lexer::lex(&self.lexer, value)?;
 
@@ -276,6 +288,39 @@ mod tests {
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
         assert_eq!(res, 3.0);
+    }
+
+    #[test]
+    fn sheet_long_cell_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let aa2 = "3";
+        sheet.set_cell("AA2", aa2).unwrap();
+        let res = sheet.get_cell("AA2").unwrap();
+        assert_eq!(res, 3.0);
+
+        let zz9999 = "9999";
+        sheet.set_cell("ZZ9999", zz9999).unwrap();
+        let res = sheet.get_cell("ZZ9999").unwrap();
+        assert_eq!(res, 9999.);
+
+        let err = sheet.set_cell("AAA1", "1").unwrap_err();
+        assert_eq!(err, InvalidCellName("AAA1"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn sheet_wrong_get_cell_panics() {
+        let sheet = SpreadSheet::new();
+        sheet.get_cell("AAA1").unwrap();
+    }
+
+    #[test]
+    fn sheet_wrong_set_cell_expression() {
+        let mut sheet = SpreadSheet::new();
+
+        let err = sheet.set_cell("A1", "AAA1 + 1").unwrap_err();
+        assert!(matches!(err, Error::Lexer(_)));
     }
 
     #[test]

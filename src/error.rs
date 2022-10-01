@@ -11,6 +11,9 @@ pub enum Error<'a> {
     #[error("{0}")]
     Parser(String),
 
+    #[error("Invalid cell name: {0}")]
+    InvalidCellName(&'a str),
+
     #[error("Invalid expression: {0}")]
     InvalidExpression(&'a str),
 
