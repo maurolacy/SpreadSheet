@@ -27,7 +27,7 @@ pub enum AST {
     RightParenthesis,
 }
 
-const CELL_NAME_PATTERN: &str = r"[A-Z]{1,2}[0-9]+";
+const CELL_NAME_PATTERN: &str = r"[A-Za-z]{1,2}[1-9][0-9]*";
 
 pub struct SpreadSheet {
     cell_name_lexer: LexerRules,
@@ -139,7 +139,9 @@ impl SpreadSheet {
 
     pub fn get_cell(&self, cell: &str) -> Option<f64> {
         // Lex name
-        santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell)).unwrap();
+        santiago::lexer::lex(&self.cell_name_lexer, cell)
+            .map_err(|_| InvalidCellName(cell))
+            .unwrap();
 
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
@@ -303,6 +305,12 @@ mod tests {
         sheet.set_cell("ZZ9999", zz9999).unwrap();
         let res = sheet.get_cell("ZZ9999").unwrap();
         assert_eq!(res, 9999.);
+
+        let err = sheet.set_cell("A0", "1").unwrap_err();
+        assert_eq!(err, InvalidCellName("A0"));
+
+        let err = sheet.set_cell("A01", "1").unwrap_err();
+        assert_eq!(err, InvalidCellName("A01"));
 
         let err = sheet.set_cell("AAA1", "1").unwrap_err();
         assert_eq!(err, InvalidCellName("AAA1"));
