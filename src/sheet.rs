@@ -279,15 +279,47 @@ mod tests {
     }
 
     #[test]
+    fn sheet_int_works() {
+        let mut sheet = SpreadSheet::new();
+
+        for i in &[
+            "0", "00", "+0", "-0", "00000", "+0000", "-0000000", "001", "+001", "-001", "10", "1",
+            "+1", "-1", "10000", "+1000", "-1000000", "1234", "+1234", "-1234",
+        ] {
+            sheet.set_cell("I1", i).unwrap();
+            let res = sheet.get_cell("I1").unwrap();
+            assert_eq!(res, i.parse::<i64>().unwrap() as f64);
+        }
+    }
+
+    #[test]
     fn sheet_float_works() {
         let mut sheet = SpreadSheet::new();
 
         for f in &[
-            "0.0", "0.", "+0.", "-0.", "0.0000", "+0.000", "-0.000000", "0.01", "+0.01", "-0.01",
-            "1.0", "1.", "+1.", "-1.", "1.0000", "+1.000", "-1.000000", "1.234", "+1.234", "-1.234",
+            "0.0",
+            "0.",
+            "+0.",
+            "-0.",
+            "0.0000",
+            "+0.000",
+            "-0.000000",
+            "0.01",
+            "+0.01",
+            "-0.01",
+            "1.0",
+            "1.",
+            "+1.",
+            "-1.",
+            "1.0000",
+            "+1.000",
+            "-1.000000",
+            "1.234",
+            "+1.234",
+            "-1.234",
         ] {
-            sheet.set_cell("A0", f).unwrap();
-            let res = sheet.get_cell("A0").unwrap();
+            sheet.set_cell("F1", f).unwrap();
+            let res = sheet.get_cell("F1").unwrap();
             assert_eq!(res, f.parse::<f64>().unwrap());
         }
     }
