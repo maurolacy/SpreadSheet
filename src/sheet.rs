@@ -169,7 +169,8 @@ impl SpreadSheet {
         let res = self.cyclic(cell);
         // Restore children and parents if cyclic
         if res.is_err() {
-            self.cells_children.insert(cell.to_string(), old_children.unwrap_or_default());
+            self.cells_children
+                .insert(cell.to_string(), old_children.unwrap_or_default());
             self.cells_parents = old_parents;
             return res;
         }
@@ -275,6 +276,20 @@ mod tests {
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
         assert_eq!(res, 3.0);
+    }
+
+    #[test]
+    fn sheet_float_works() {
+        let mut sheet = SpreadSheet::new();
+
+        for f in &[
+            "0.0", "0.", "+0.", "-0.", "0.0000", "+0.000", "-0.000000", "0.01", "+0.01", "-0.01",
+            "1.0", "1.", "+1.", "-1.", "1.0000", "+1.000", "-1.000000", "1.234", "+1.234", "-1.234",
+        ] {
+            sheet.set_cell("A0", f).unwrap();
+            let res = sheet.get_cell("A0").unwrap();
+            assert_eq!(res, f.parse::<f64>().unwrap());
+        }
     }
 
     #[test]
