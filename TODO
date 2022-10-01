@@ -25,3 +25,5 @@
   - Add support for the formula (^=) syntax - Literal (string) if not formula
 
 - Stress test the sheet with many cells
+
+- Turn the pending bullet points into GitHub issues
