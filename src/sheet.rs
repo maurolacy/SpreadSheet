@@ -295,13 +295,22 @@ mod tests {
     use crate::error::Error;
 
     #[test]
-    fn sheet_works() {
+    fn sheet_formula_works() {
         let mut sheet = SpreadSheet::new();
 
         let a2 = "=1 + 2";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
         assert_eq!(res, 3.0);
+    }
+
+    #[test]
+    fn sheet_formula_breaks() {
+        let mut sheet = SpreadSheet::new();
+
+        let a2 = "=1 + 2=";
+        let err = sheet.set_cell("A2", a2).unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
     }
 
     #[test]
@@ -547,10 +556,10 @@ mod tests {
         let mut sheet = SpreadSheet::new();
 
         // Binary errors
-        let err = sheet.set_cell("A3", "=3//2");
-        assert!(matches!(err, Err(Error::Parser(_))));
-        let err = sheet.set_cell("A3", "=**2");
-        assert!(matches!(err, Err(Error::Parser(_))));
+        let err = sheet.set_cell("A3", "=3//2").unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
+        let err = sheet.set_cell("A3", "=**2").unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
         // TODO? Add more
     }
 
@@ -653,10 +662,10 @@ mod tests {
     fn sheet_parentheses_syntax_errors() {
         let mut sheet = SpreadSheet::new();
 
-        let err = sheet.set_cell("A3", "=3**((A2+1)*0.1*(1+2)");
-        assert!(matches!(err, Err(Error::Parser(_))));
-        let err = sheet.set_cell("A3", "=(A2+1))");
-        assert!(matches!(err, Err(Error::Parser(_))));
+        let err = sheet.set_cell("A3", "=3**((A2+1)*0.1*(1+2)").unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
+        let err = sheet.set_cell("A3", "=(A2+1))").unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
     }
 
     #[test]
@@ -664,8 +673,8 @@ mod tests {
         let mut sheet = SpreadSheet::new();
 
         // (Naïve) Circular dep detected
-        let err = sheet.set_cell("A3", "=1 + A3");
-        assert_eq!(err, Err(CyclicDependency("A3")));
+        let err = sheet.set_cell("A3", "=1 + A3").unwrap_err();
+        assert_eq!(err, CyclicDependency("A3"));
     }
 
     #[test]
