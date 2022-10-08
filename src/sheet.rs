@@ -61,8 +61,8 @@ impl SpreadSheet {
                     lexer.take()
                 };
                 "INSIDE_FORMULA" | "CELL" = pattern CELL_NAME_PATTERN;
-                "INSIDE_FORMULA" "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
-                "INSIDE_FORMULA" "DEFAULT" | "INT" = pattern r"[0-9]+";
+                "INSIDE_FORMULA" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
+                "INSIDE_FORMULA" | "INT" = pattern r"[0-9]+";
                 "INSIDE_FORMULA" | "+" = string "+";
                 "INSIDE_FORMULA" | "-" = string "-";
                 "INSIDE_FORMULA" | "*" = string "*";
@@ -72,6 +72,8 @@ impl SpreadSheet {
                 "INSIDE_FORMULA" | ")" = string ")";
                 "INSIDE_FORMULA" | "WS" = pattern r"\s" => |lexer| lexer.skip();
 
+                "DEFAULT" | "INT_LITERAL" = pattern r"[+-]{0,1}[0-9]+";
+                "DEFAULT" | "FLOAT_LITERAL" = pattern r"[+-]{0,1}[0-9]+\.[0-9]*";
                 "DEFAULT" | "LITERAL" = pattern "[^=].*";
 
                 "INSIDE_FORMULA" | "" = string "" => |lexer| {
@@ -81,7 +83,8 @@ impl SpreadSheet {
             ),
             grammar: santiago::grammar!(
                 "full_expr" => rules "formula" "expr" => AST::Formula;
-                "full_expr" => rules "int" => AST::Formula;
+                "full_expr" => rules "int_literal" => AST::Formula;
+                "full_expr" => rules "float_literal" => AST::Formula;
                 "full_expr" => empty => AST::Literal;
                 "full_expr" => rules "literal" => AST::Literal;
 
@@ -141,7 +144,17 @@ impl SpreadSheet {
                         let value = str::parse(&lexemes[0].raw).unwrap();
                         AST::Float(value)
                     };
+                "float_literal" => lexemes "FLOAT_LITERAL" =>
+                    |lexemes| {
+                        let value = str::parse(&lexemes[0].raw).unwrap();
+                        AST::Float(value)
+                    };
                 "int" => lexemes "INT" =>
+                    |lexemes| {
+                        let value = str::parse(&lexemes[0].raw).unwrap();
+                        AST::Int(value)
+                    };
+                "int_literal" => lexemes "INT_LITERAL" =>
                     |lexemes| {
                         let value = str::parse(&lexemes[0].raw).unwrap();
                         AST::Int(value)
@@ -306,12 +319,10 @@ impl SpreadSheet {
                 }
             },
             AST::Parentheses(args) => self.eval(&args[1]),
-            AST::Formula(args) => {
-                match args.len() {
-                    0 => unreachable!(),
-                    1 => self.eval(&args[0]),
-                    _ => self.eval(&args[1])
-                }
+            AST::Formula(args) => match args.len() {
+                1 => self.eval(&args[0]),
+                2 => self.eval(&args[1]),
+                _ => unreachable!(),
             },
             AST::Literal(args) => {
                 println!("{:?}", args);
@@ -345,7 +356,7 @@ mod tests {
 
         let a1 = "=";
         let err = sheet.set_cell("A1", a1).unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        assert!(matches!(err, Error::Parser(_))); // FIXME: Should be a literal!
 
         let a2 = "=1 + 2=";
         let err = sheet.set_cell("A2", a2).unwrap_err();
@@ -376,10 +387,40 @@ mod tests {
     fn sheet_int_literal_works() {
         let mut sheet = SpreadSheet::new();
 
-        let a2 = "123";
+        let a1 = "123";
+        sheet.set_cell("A1", a1).unwrap();
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, 123.0);
+
+        let a2 = "+123";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
         assert_eq!(res, 123.0);
+
+        let a3 = "-123";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -123.0);
+    }
+
+    #[test]
+    fn sheet_float_literal_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let a1 = "123.456";
+        sheet.set_cell("A1", a1).unwrap();
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, 123.456);
+
+        let a2 = "+123.456";
+        sheet.set_cell("A2", a2).unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, 123.456);
+
+        let a3 = "-123.01";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, -123.01);
     }
 
     #[test]
