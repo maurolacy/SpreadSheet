@@ -14,6 +14,8 @@ use crate::error::Error::{CyclicDependency, InvalidCellName, InvalidExpression};
 pub enum AST {
     Formula(Vec<AST>),
     FormulaStart,
+    Literal(Vec<AST>),
+    Str(String),
     Cell(String),
     Float(f64),
     Int(i64),
@@ -54,27 +56,36 @@ impl SpreadSheet {
                 "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
             ),
             lexer: santiago::lexer_rules!(
-                "DEFAULT" | "FORMULA" = string "=";
-                "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
-                "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
-                "DEFAULT" | "INT" = pattern r"[0-9]+";
-                "DEFAULT" | "+" = string "+";
-                "DEFAULT" | "-" = string "-";
-                "DEFAULT" | "*" = string "*";
-                "DEFAULT" | "/" = string "/";
-                "DEFAULT" | "**" = string "**";
-                "DEFAULT" | "(" = string "(";
-                "DEFAULT" | ")" = string ")";
-                "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
+                "DEFAULT" | "FORMULA" = string "=" => |lexer| {
+                    lexer.push_state("INSIDE_FORMULA");
+                    lexer.take()
+                };
+                "INSIDE_FORMULA" | "CELL" = pattern CELL_NAME_PATTERN;
+                "INSIDE_FORMULA" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
+                "INSIDE_FORMULA" | "INT" = pattern r"[0-9]+";
+                "INSIDE_FORMULA" | "+" = string "+";
+                "INSIDE_FORMULA" | "-" = string "-";
+                "INSIDE_FORMULA" | "*" = string "*";
+                "INSIDE_FORMULA" | "/" = string "/";
+                "INSIDE_FORMULA" | "**" = string "**";
+                "INSIDE_FORMULA" | "(" = string "(";
+                "INSIDE_FORMULA" | ")" = string ")";
+                "INSIDE_FORMULA" | "WS" = pattern r"\s" => |lexer| lexer.skip();
+
+                "DEFAULT" | "LITERAL" = pattern "[^=].*";
+
+                "INSIDE_FORMULA" | "" = string "" => |lexer| {
+                    lexer.pop_state();
+                    lexer.skip()
+                };
             ),
             grammar: santiago::grammar!(
-                "full_expr" => rules "formula";
+                "full_expr" => rules "formula" "expr" => AST::Formula;
+                "full_expr" => rules "literal" => AST::Literal;
 
                 "expr" => rules "cell";
                 "expr" => rules "float";
                 "expr" => rules "int";
-
-                "full_expr" => rules "formula" "expr" => AST::Formula;
 
                 "expr" => rules "leftp" "expr" "rightp" => AST::Parentheses;
 
@@ -113,6 +124,12 @@ impl SpreadSheet {
                     |_| {
                         AST::FormulaStart
                     };
+
+                "literal" => lexemes "LITERAL" =>
+                    |lexemes| {
+                        AST::Str(lexemes[0].raw.clone())
+                    };
+
                 "cell" => lexemes "CELL" =>
                     |lexemes| {
                         AST::Cell(lexemes[0].raw.clone())
@@ -178,7 +195,7 @@ impl SpreadSheet {
 
         // Parse value
         let parse_tree = santiago::parser::parse(&self.grammar, &lexemes)?;
-        if parse_tree.len() != 1 {
+        if parse_tree.is_empty() {
             return Err(InvalidExpression(value));
         }
         let parse_tree = parse_tree.first().unwrap();
@@ -275,16 +292,26 @@ impl SpreadSheet {
                 AST::OperatorMultiply => self.eval(&args[0]) * self.eval(&args[2]),
                 AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
                 AST::OperatorPotentiate => f64::powf(self.eval(&args[0]), self.eval(&args[2])),
-                _ => unreachable!(),
+                _ => {
+                    unreachable!();
+                }
             },
             AST::UnaryOperation(args) => match &args[0] {
                 AST::OperatorAdd => self.eval(&args[1]),
                 AST::OperatorSubtract => -self.eval(&args[1]),
-                _ => unreachable!(),
+                _ => {
+                    unreachable!();
+                }
             },
             AST::Parentheses(args) => self.eval(&args[1]),
             AST::Formula(args) => self.eval(&args[1]),
-            _ => unreachable!(),
+            AST::Literal(args) => {
+                println!("{:?}", args);
+                0.0
+            }
+            _ => {
+                unreachable!();
+            }
         }
     }
 }
@@ -308,13 +335,28 @@ mod tests {
     fn sheet_formula_breaks() {
         let mut sheet = SpreadSheet::new();
 
+        let a1 = "=";
+        let err = sheet.set_cell("A1", a1).unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
+
         let a2 = "=1 + 2=";
         let err = sheet.set_cell("A2", a2).unwrap_err();
         assert!(matches!(err, Error::Parser(_)));
 
-        let a3 = "3=1 + 2";
-        let err = sheet.set_cell("A3", a3).unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        let a3 = "3=1 + 2"; // Taken as a literal
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, 0.0);
+    }
+
+    #[test]
+    fn sheet_literal_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let a2 = "123";
+        sheet.set_cell("A2", a2).unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, 0.0);
     }
 
     #[test]
@@ -354,7 +396,7 @@ mod tests {
         let mut sheet = SpreadSheet::new();
 
         let err = sheet.set_cell("A1", "=AAA1 + 1").unwrap_err();
-        assert!(matches!(err, Error::Lexer(_)));
+        assert!(matches!(err, Error::Parser(_)));
     }
 
     #[test]
