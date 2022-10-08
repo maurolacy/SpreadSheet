@@ -307,16 +307,12 @@ impl SpreadSheet {
                 AST::OperatorMultiply => self.eval(&args[0]) * self.eval(&args[2]),
                 AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
                 AST::OperatorPotentiate => f64::powf(self.eval(&args[0]), self.eval(&args[2])),
-                _ => {
-                    unreachable!();
-                }
+                _ => unreachable!(),
             },
             AST::UnaryOperation(args) => match &args[0] {
                 AST::OperatorAdd => self.eval(&args[1]),
                 AST::OperatorSubtract => -self.eval(&args[1]),
-                _ => {
-                    unreachable!();
-                }
+                _ => unreachable!(),
             },
             AST::Parentheses(args) => self.eval(&args[1]),
             AST::Formula(args) => match args.len() {
@@ -328,9 +324,7 @@ impl SpreadSheet {
                 println!("{:?}", args);
                 0.0
             }
-            _ => {
-                unreachable!();
-            }
+            _ => unreachable!(),
         }
     }
 }
