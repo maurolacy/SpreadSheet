@@ -54,7 +54,7 @@ impl SpreadSheet {
                 "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
             ),
             lexer: santiago::lexer_rules!(
-                "DEFAULT" | "FORMULA" = pattern r"^=";
+                "DEFAULT" | "FORMULA" = string "=";
                 "DEFAULT" | "CELL" = pattern CELL_NAME_PATTERN;
                 "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
                 "DEFAULT" | "INT" = pattern r"[0-9]+";
@@ -310,6 +310,10 @@ mod tests {
 
         let a2 = "=1 + 2=";
         let err = sheet.set_cell("A2", a2).unwrap_err();
+        assert!(matches!(err, Error::Parser(_)));
+
+        let a3 = "3=1 + 2";
+        let err = sheet.set_cell("A3", a3).unwrap_err();
         assert!(matches!(err, Error::Parser(_)));
     }
 
