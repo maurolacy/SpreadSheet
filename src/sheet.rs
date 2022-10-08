@@ -61,8 +61,8 @@ impl SpreadSheet {
                     lexer.take()
                 };
                 "INSIDE_FORMULA" | "CELL" = pattern CELL_NAME_PATTERN;
-                "INSIDE_FORMULA" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
-                "INSIDE_FORMULA" | "INT" = pattern r"[0-9]+";
+                "INSIDE_FORMULA" "DEFAULT" | "FLOAT" = pattern r"[0-9]+\.[0-9]*";
+                "INSIDE_FORMULA" "DEFAULT" | "INT" = pattern r"[0-9]+";
                 "INSIDE_FORMULA" | "+" = string "+";
                 "INSIDE_FORMULA" | "-" = string "-";
                 "INSIDE_FORMULA" | "*" = string "*";
@@ -81,6 +81,7 @@ impl SpreadSheet {
             ),
             grammar: santiago::grammar!(
                 "full_expr" => rules "formula" "expr" => AST::Formula;
+                "full_expr" => rules "int" => AST::Formula;
                 "full_expr" => empty => AST::Literal;
                 "full_expr" => rules "literal" => AST::Literal;
 
@@ -305,7 +306,13 @@ impl SpreadSheet {
                 }
             },
             AST::Parentheses(args) => self.eval(&args[1]),
-            AST::Formula(args) => self.eval(&args[1]),
+            AST::Formula(args) => {
+                match args.len() {
+                    0 => unreachable!(),
+                    1 => self.eval(&args[0]),
+                    _ => self.eval(&args[1])
+                }
+            },
             AST::Literal(args) => {
                 println!("{:?}", args);
                 0.0
@@ -359,10 +366,20 @@ mod tests {
         let res = sheet.get_cell("A1").unwrap();
         assert_eq!(res, 0.0);
 
-        let a2 = "123";
+        let a2 = "TEST";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
         assert_eq!(res, 0.0);
+    }
+
+    #[test]
+    fn sheet_int_literal_works() {
+        let mut sheet = SpreadSheet::new();
+
+        let a2 = "123";
+        sheet.set_cell("A2", a2).unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, 123.0);
     }
 
     #[test]
