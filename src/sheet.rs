@@ -81,6 +81,7 @@ impl SpreadSheet {
             ),
             grammar: santiago::grammar!(
                 "full_expr" => rules "formula" "expr" => AST::Formula;
+                "full_expr" => empty => AST::Literal;
                 "full_expr" => rules "literal" => AST::Literal;
 
                 "expr" => rules "cell";
@@ -352,6 +353,11 @@ mod tests {
     #[test]
     fn sheet_literal_works() {
         let mut sheet = SpreadSheet::new();
+
+        let empty = "";
+        sheet.set_cell("A1", empty).unwrap();
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, 0.0);
 
         let a2 = "123";
         sheet.set_cell("A2", a2).unwrap();
