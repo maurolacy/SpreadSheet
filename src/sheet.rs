@@ -14,8 +14,6 @@ use crate::error::Error::{CyclicDependency, InvalidCellName, InvalidExpression};
 pub enum AST {
     Formula(Vec<AST>),
     FormulaStart,
-    Literal(Vec<AST>),
-    Str(String),
     Cell(String),
     Float(f64),
     Int(i64),
@@ -74,7 +72,6 @@ impl SpreadSheet {
 
                 "DEFAULT" | "INT_LITERAL" = pattern r"[+-]{0,1}[0-9]+";
                 "DEFAULT" | "FLOAT_LITERAL" = pattern r"[+-]{0,1}[0-9]+\.[0-9]*";
-                "DEFAULT" | "LITERAL" = pattern "[^=].*";
 
                 "INSIDE_FORMULA" | "" = string "" => |lexer| {
                     lexer.pop_state();
@@ -85,8 +82,6 @@ impl SpreadSheet {
                 "full_expr" => rules "formula" "expr" => AST::Formula;
                 "full_expr" => rules "int_literal" => AST::Formula;
                 "full_expr" => rules "float_literal" => AST::Formula;
-                "full_expr" => empty => AST::Literal;
-                "full_expr" => rules "literal" => AST::Literal;
 
                 "expr" => rules "cell";
                 "expr" => rules "float";
@@ -128,11 +123,6 @@ impl SpreadSheet {
                 "formula" => lexemes "FORMULA" =>
                     |_| {
                         AST::FormulaStart
-                    };
-
-                "literal" => lexemes "LITERAL" =>
-                    |lexemes| {
-                        AST::Str(lexemes[0].raw.clone())
                     };
 
                 "cell" => lexemes "CELL" =>
@@ -320,10 +310,6 @@ impl SpreadSheet {
                 2 => self.eval(&args[1]),
                 _ => unreachable!(),
             },
-            AST::Literal(args) => {
-                println!("{:?}", args);
-                0.0
-            }
             _ => unreachable!(),
         }
     }
