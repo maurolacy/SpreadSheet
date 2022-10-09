@@ -183,8 +183,8 @@ impl SpreadSheet {
 
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
-        if value.is_some() {
-            return Some(value.unwrap().to_string());
+        if let Some(v) = value {
+            return Some(v.to_string());
         }
         drop(cache);
 
@@ -208,20 +208,20 @@ impl SpreadSheet {
         // Lex value
         // If it cannot be lexed, take it as a string literal
         let res = santiago::lexer::lex(&self.lexer, value);
-        let lexemes;
-        if res.is_err() {
+        let lexemes = if let Ok(lexemes) = res {
+            lexemes
+        } else {
             self.cells
                 .insert(cell.to_string(), CellValue::Literal(value.to_string()));
             return Ok(());
-        } else {
-            lexemes = res.unwrap();
-        }
+        };
 
         // Try to parse value
         let res = santiago::parser::parse(&self.grammar, &lexemes);
-        let parse_tree;
         // If it cannot be parsed, take it as a string literal (with exceptions)
-        if res.is_err() {
+        let parse_tree = if let Ok(tree) = res {
+            tree
+        } else {
             // FIXME: Proper error handling / error types differentiation
             let err = res.unwrap_err().to_string();
             println!("Expr: {}, Parser error: {}", value, err);
@@ -240,9 +240,7 @@ impl SpreadSheet {
             self.cells
                 .insert(cell.to_string(), CellValue::Literal(value.to_string()));
             return Ok(());
-        } else {
-            parse_tree = res.unwrap();
-        }
+        };
         if parse_tree.len() != 1 {
             return Err(InvalidExpression(value));
         }
@@ -336,7 +334,7 @@ impl SpreadSheet {
             AST::Float(float) => *float,
             AST::Cell(cell) => self
                 .get_cell(cell)
-                .unwrap_or("0".to_string())
+                .unwrap_or_else(|| "0".to_string())
                 .parse()
                 .unwrap(), // FIXME: Value error here
             AST::BinaryOperation(args) => match &args[1] {
@@ -727,7 +725,7 @@ mod tests {
 
         sheet.set_cell("A3", "=0 / 0").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res.to_string(), f64::NAN.to_string());
+        assert_eq!(res, f64::NAN.to_string());
     }
 
     #[test]
