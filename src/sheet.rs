@@ -206,12 +206,21 @@ impl SpreadSheet {
         santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell))?;
 
         // Lex value
-        let lexemes = santiago::lexer::lex(&self.lexer, value)?;
+        // If it cannot be lexed, take it as a string literal
+        let res = santiago::lexer::lex(&self.lexer, value);
+        let lexemes;
+        if res.is_err() {
+            self.cells
+                .insert(cell.to_string(), CellValue::Literal(value.to_string()));
+            return Ok(());
+        } else {
+            lexemes = res.unwrap();
+        }
 
         // Try to parse value
         let res = santiago::parser::parse(&self.grammar, &lexemes);
         let parse_tree;
-        // If it cannot be parsed, take it as a string literal
+        // If it cannot be parsed, take it as a string literal (with exceptions)
         if res.is_err() {
             // FIXME: Proper error handling / error types differentiation
             let err = res.unwrap_err().to_string();
@@ -395,13 +404,24 @@ mod tests {
 
         let empty = "";
         sheet.set_cell("A1", empty).unwrap();
-        // let res = sheet.get_cell("A1").unwrap();
-        // assert_eq!(res, "0");
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, empty);
 
-        // let a2 = "TEST";
-        // sheet.set_cell("A2", a2).unwrap();
-        // let res = sheet.get_cell("A2").unwrap();
-        // assert_eq!(res, "0");
+        let a2 = "This is a literal TEST";
+        sheet.set_cell("A2", a2).unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, a2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn sheet_literal_in_formula() {
+        let mut sheet = SpreadSheet::new();
+
+        sheet.set_cell("A1", "bullshit").unwrap();
+        sheet.set_cell("A2", "= A1 + 1").unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, "1.0");
     }
 
     #[test]
@@ -477,11 +497,12 @@ mod tests {
     }
 
     #[test]
-    fn sheet_wrong_set_cell_expression() {
+    fn sheet_wrong_cell_formula_as_literal() {
         let mut sheet = SpreadSheet::new();
 
-        let err = sheet.set_cell("A1", "=AAA1 + 1").unwrap_err();
-        assert!(matches!(err, Error::Lexer(_)));
+        sheet.set_cell("A1", "=AAA1 + 1").unwrap(); // FIXME? Map invalid cell name to zero
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, "=AAA1 + 1");
     }
 
     #[test]
