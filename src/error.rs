@@ -12,10 +12,13 @@ pub enum Error<'a> {
     Parser(String),
 
     #[error("Invalid cell name: {0}")]
-    InvalidCellName(&'a str),
+    InvalidCellName(String),
 
     #[error("Invalid expression: {0}")]
     InvalidExpression(&'a str),
+
+    #[error("Not a number: {0}")]
+    InvalidNumericLiteral(String),
 
     #[error("Circular dependency detected: {0}")]
     CyclicDependency(&'a str),

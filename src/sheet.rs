@@ -8,7 +8,9 @@ use santiago::lexer::{Lexeme, LexerRules};
 use santiago::parser::Tree;
 
 use crate::error::Error;
-use crate::error::Error::{CyclicDependency, InvalidCellName, InvalidExpression};
+use crate::error::Error::{
+    CyclicDependency, InvalidCellName, InvalidExpression, InvalidNumericLiteral,
+};
 
 #[derive(Debug)]
 pub enum AST {
@@ -175,35 +177,37 @@ impl SpreadSheet {
         }
     }
 
-    pub fn get_cell(&self, cell: &str) -> Option<String> {
+    pub fn get_cell(&self, cell: &str) -> Result<String, Error> {
         // Lex name
         santiago::lexer::lex(&self.cell_name_lexer, cell)
-            .map_err(|_| InvalidCellName(cell))
-            .unwrap();
+            .map_err(|_| InvalidCellName(cell.to_string()))?;
 
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
         if let Some(v) = value {
-            return Some(v.to_string());
+            return Ok(v.to_string());
         }
         drop(cache);
 
         let cell_value = self.cells.get(cell);
 
-        cell_value.map(|value| match value {
-            CellValue::Literal(lit) => lit.to_owned(),
-            CellValue::Tree(tree) => {
-                let value = self.eval(&tree.as_abstract_syntax_tree());
-                let mut cache = self.cells_cache.borrow_mut();
-                cache.insert(cell.to_string(), value);
-                value.to_string()
-            }
-        })
+        cell_value
+            .map(|value| match value {
+                CellValue::Literal(lit) => Ok(lit.to_owned()),
+                CellValue::Tree(tree) => {
+                    let value = self.eval(&tree.as_abstract_syntax_tree())?;
+                    let mut cache = self.cells_cache.borrow_mut();
+                    cache.insert(cell.to_string(), value);
+                    Ok(value.to_string())
+                }
+            })
+            .unwrap_or_else(|| Ok("0".to_string()))
     }
 
     pub fn set_cell<'a>(&mut self, cell: &'a str, value: &'a str) -> Result<(), Error<'a>> {
         // Lex name
-        santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell))?;
+        santiago::lexer::lex(&self.cell_name_lexer, cell)
+            .map_err(|_| InvalidCellName(cell.to_string()))?;
 
         // Lex value
         // If it cannot be lexed, take it as a string literal
@@ -328,26 +332,27 @@ impl SpreadSheet {
         }
     }
 
-    pub fn eval(&self, value: &AST) -> f64 {
+    pub fn eval(&self, value: &AST) -> Result<f64, Error> {
         match value {
-            AST::Int(int) => *int as _,
-            AST::Float(float) => *float,
+            AST::Int(int) => Ok(*int as _),
+            AST::Float(float) => Ok(*float),
             AST::Cell(cell) => self
-                .get_cell(cell)
-                .unwrap_or_else(|| "0".to_string())
+                .get_cell(cell)?
                 .parse()
-                .unwrap(), // FIXME: Value error here
+                .map_err(|_| InvalidNumericLiteral(cell.to_owned())),
             AST::BinaryOperation(args) => match &args[1] {
-                AST::OperatorAdd => self.eval(&args[0]) + self.eval(&args[2]),
-                AST::OperatorSubtract => self.eval(&args[0]) - self.eval(&args[2]),
-                AST::OperatorMultiply => self.eval(&args[0]) * self.eval(&args[2]),
-                AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
-                AST::OperatorPotentiate => f64::powf(self.eval(&args[0]), self.eval(&args[2])),
+                AST::OperatorAdd => Ok(self.eval(&args[0])? + self.eval(&args[2])?),
+                AST::OperatorSubtract => Ok(self.eval(&args[0])? - self.eval(&args[2])?),
+                AST::OperatorMultiply => Ok(self.eval(&args[0])? * self.eval(&args[2])?),
+                AST::OperatorDivide => Ok(self.eval(&args[0])? / self.eval(&args[2])?),
+                AST::OperatorPotentiate => {
+                    Ok(f64::powf(self.eval(&args[0])?, self.eval(&args[2])?))
+                }
                 _ => unreachable!(),
             },
             AST::UnaryOperation(args) => match &args[0] {
                 AST::OperatorAdd => self.eval(&args[1]),
-                AST::OperatorSubtract => -self.eval(&args[1]),
+                AST::OperatorSubtract => Ok(-self.eval(&args[1])?),
                 _ => unreachable!(),
             },
             AST::Parentheses(args) => self.eval(&args[1]),
@@ -412,14 +417,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn sheet_literal_in_formula() {
         let mut sheet = SpreadSheet::new();
 
         sheet.set_cell("A1", "bullshit").unwrap();
         sheet.set_cell("A2", "= A1 + 1").unwrap();
-        let res = sheet.get_cell("A2").unwrap();
-        assert_eq!(res, "1.0");
+        let err = sheet.get_cell("A2").unwrap_err();
+        assert_eq!(err, InvalidNumericLiteral("A1".to_string()));
     }
 
     #[test]
@@ -478,20 +482,20 @@ mod tests {
 
         // Invalid names
         let err = sheet.set_cell("A0", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("A0"));
+        assert_eq!(err, InvalidCellName("A0".to_string()));
 
         let err = sheet.set_cell("A01", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("A01"));
+        assert_eq!(err, InvalidCellName("A01".to_string()));
 
         let err = sheet.set_cell("AAA1", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("AAA1"));
+        assert_eq!(err, InvalidCellName("AAA1".to_string()));
     }
 
     #[test]
-    #[should_panic]
-    fn sheet_wrong_get_cell_panics() {
+    fn sheet_wrong_cell_name_errors() {
         let sheet = SpreadSheet::new();
-        sheet.get_cell("AAA1").unwrap();
+        let err = sheet.get_cell("AAA1").unwrap_err();
+        assert!(matches!(err, InvalidCellName(_)))
     }
 
     #[test]
