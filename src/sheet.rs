@@ -8,14 +8,14 @@ use santiago::lexer::{Lexeme, LexerRules};
 use santiago::parser::Tree;
 
 use crate::error::Error;
-use crate::error::Error::{CyclicDependency, InvalidCellName, InvalidExpression};
+use crate::error::Error::{
+    CyclicDependency, InvalidCellName, InvalidExpression, InvalidNumericLiteral,
+};
 
 #[derive(Debug)]
 pub enum AST {
     Formula(Vec<AST>),
     FormulaStart,
-    Literal(Vec<AST>),
-    Str(String),
     Cell(String),
     Float(f64),
     Int(i64),
@@ -33,11 +33,16 @@ pub enum AST {
 
 const CELL_NAME_PATTERN: &str = r"[A-Za-z]{1,2}[1-9][0-9]*";
 
+pub enum CellValue {
+    Literal(String),
+    Tree(Rc<Tree<AST>>),
+}
+
 pub struct SpreadSheet {
     cell_name_lexer: LexerRules,
     lexer: LexerRules,
     grammar: Grammar<AST>,
-    cells: HashMap<String, Rc<Tree<AST>>>,
+    cells: HashMap<String, CellValue>,
     cells_cache: RefCell<HashMap<String, f64>>,
     cells_children: HashMap<String, HashSet<String>>,
     cells_parents: HashMap<String, HashSet<String>>,
@@ -74,7 +79,6 @@ impl SpreadSheet {
 
                 "DEFAULT" | "INT_LITERAL" = pattern r"[+-]{0,1}[0-9]+";
                 "DEFAULT" | "FLOAT_LITERAL" = pattern r"[+-]{0,1}[0-9]+\.[0-9]*";
-                "DEFAULT" | "LITERAL" = pattern "[^=].*";
 
                 "INSIDE_FORMULA" | "" = string "" => |lexer| {
                     lexer.pop_state();
@@ -85,8 +89,6 @@ impl SpreadSheet {
                 "full_expr" => rules "formula" "expr" => AST::Formula;
                 "full_expr" => rules "int_literal" => AST::Formula;
                 "full_expr" => rules "float_literal" => AST::Formula;
-                "full_expr" => empty => AST::Literal;
-                "full_expr" => rules "literal" => AST::Literal;
 
                 "expr" => rules "cell";
                 "expr" => rules "float";
@@ -128,11 +130,6 @@ impl SpreadSheet {
                 "formula" => lexemes "FORMULA" =>
                     |_| {
                         AST::FormulaStart
-                    };
-
-                "literal" => lexemes "LITERAL" =>
-                    |lexemes| {
-                        AST::Str(lexemes[0].raw.clone())
                     };
 
                 "cell" => lexemes "CELL" =>
@@ -180,37 +177,75 @@ impl SpreadSheet {
         }
     }
 
-    pub fn get_cell(&self, cell: &str) -> Option<f64> {
+    pub fn get_cell(&self, cell: &str) -> Result<String, Error> {
         // Lex name
         santiago::lexer::lex(&self.cell_name_lexer, cell)
-            .map_err(|_| InvalidCellName(cell))
-            .unwrap();
+            .map_err(|_| InvalidCellName(cell.to_string()))?;
 
         let cache = self.cells_cache.borrow();
         let value = cache.get(cell);
-        if value.is_some() {
-            return value.cloned();
+        if let Some(v) = value {
+            return Ok(v.to_string());
         }
         drop(cache);
-        let tree = self.cells.get(cell);
-        let value = tree.map(|tree| self.eval(&tree.as_abstract_syntax_tree()));
-        if let Some(v) = value {
-            let mut cache = self.cells_cache.borrow_mut();
-            cache.insert(cell.to_string(), v);
-        };
-        value
+
+        let cell_value = self.cells.get(cell);
+
+        cell_value
+            .map(|value| match value {
+                CellValue::Literal(lit) => Ok(lit.to_owned()),
+                CellValue::Tree(tree) => {
+                    let value = self.eval(&tree.as_abstract_syntax_tree())?;
+                    let mut cache = self.cells_cache.borrow_mut();
+                    cache.insert(cell.to_string(), value);
+                    Ok(value.to_string())
+                }
+            })
+            .unwrap_or_else(|| Ok("0".to_string()))
     }
 
     pub fn set_cell<'a>(&mut self, cell: &'a str, value: &'a str) -> Result<(), Error<'a>> {
         // Lex name
-        santiago::lexer::lex(&self.cell_name_lexer, cell).map_err(|_| InvalidCellName(cell))?;
+        santiago::lexer::lex(&self.cell_name_lexer, cell)
+            .map_err(|_| InvalidCellName(cell.to_string()))?;
 
         // Lex value
-        let lexemes = santiago::lexer::lex(&self.lexer, value)?;
+        // If it cannot be lexed, take it as a string literal
+        let res = santiago::lexer::lex(&self.lexer, value);
+        let lexemes = if let Ok(lexemes) = res {
+            lexemes
+        } else {
+            self.cells
+                .insert(cell.to_string(), CellValue::Literal(value.to_string()));
+            return Ok(());
+        };
 
-        // Parse value
-        let parse_tree = santiago::parser::parse(&self.grammar, &lexemes)?;
-        if parse_tree.is_empty() {
+        // Try to parse value
+        let res = santiago::parser::parse(&self.grammar, &lexemes);
+        // If it cannot be parsed, take it as a string literal (with exceptions)
+        let parse_tree = if let Ok(tree) = res {
+            tree
+        } else {
+            // FIXME: Proper error handling / error types differentiation
+            let err = res.unwrap_err().to_string();
+            println!("Expr: {}, Parser error: {}", value, err);
+            // Error on broken parentheses
+            if err.starts_with("At: )") {
+                return Err(InvalidExpression(value));
+            }
+            // Error on broken formula
+            if err.starts_with("At: INT ") {
+                return Err(InvalidExpression(value));
+            }
+            // Error on broken formula
+            if err.starts_with("At: FLOAT ") {
+                return Err(InvalidExpression(value));
+            }
+            self.cells
+                .insert(cell.to_string(), CellValue::Literal(value.to_string()));
+            return Ok(());
+        };
+        if parse_tree.len() != 1 {
             return Err(InvalidExpression(value));
         }
         let parse_tree = parse_tree.first().unwrap();
@@ -235,7 +270,8 @@ impl SpreadSheet {
         drop(old_parents);
 
         // Store cell's syntax tree
-        self.cells.insert(cell.to_string(), parse_tree.clone());
+        self.cells
+            .insert(cell.to_string(), CellValue::Tree(parse_tree.clone()));
 
         // Check the parents sub-tree and invalidate cached values
         self.invalidate(cell);
@@ -296,22 +332,27 @@ impl SpreadSheet {
         }
     }
 
-    pub fn eval(&self, value: &AST) -> f64 {
+    pub fn eval(&self, value: &AST) -> Result<f64, Error> {
         match value {
-            AST::Int(int) => *int as _,
-            AST::Float(float) => *float,
-            AST::Cell(cell) => self.get_cell(cell).unwrap_or_default(),
+            AST::Int(int) => Ok(*int as _),
+            AST::Float(float) => Ok(*float),
+            AST::Cell(cell) => self
+                .get_cell(cell)?
+                .parse()
+                .map_err(|_| InvalidNumericLiteral(cell.to_owned())),
             AST::BinaryOperation(args) => match &args[1] {
-                AST::OperatorAdd => self.eval(&args[0]) + self.eval(&args[2]),
-                AST::OperatorSubtract => self.eval(&args[0]) - self.eval(&args[2]),
-                AST::OperatorMultiply => self.eval(&args[0]) * self.eval(&args[2]),
-                AST::OperatorDivide => self.eval(&args[0]) / self.eval(&args[2]),
-                AST::OperatorPotentiate => f64::powf(self.eval(&args[0]), self.eval(&args[2])),
+                AST::OperatorAdd => Ok(self.eval(&args[0])? + self.eval(&args[2])?),
+                AST::OperatorSubtract => Ok(self.eval(&args[0])? - self.eval(&args[2])?),
+                AST::OperatorMultiply => Ok(self.eval(&args[0])? * self.eval(&args[2])?),
+                AST::OperatorDivide => Ok(self.eval(&args[0])? / self.eval(&args[2])?),
+                AST::OperatorPotentiate => {
+                    Ok(f64::powf(self.eval(&args[0])?, self.eval(&args[2])?))
+                }
                 _ => unreachable!(),
             },
             AST::UnaryOperation(args) => match &args[0] {
                 AST::OperatorAdd => self.eval(&args[1]),
-                AST::OperatorSubtract => -self.eval(&args[1]),
+                AST::OperatorSubtract => Ok(-self.eval(&args[1])?),
                 _ => unreachable!(),
             },
             AST::Parentheses(args) => self.eval(&args[1]),
@@ -320,10 +361,6 @@ impl SpreadSheet {
                 2 => self.eval(&args[1]),
                 _ => unreachable!(),
             },
-            AST::Literal(args) => {
-                println!("{:?}", args);
-                0.0
-            }
             _ => unreachable!(),
         }
     }
@@ -341,7 +378,7 @@ mod tests {
         let a2 = "=1 + 2";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
-        assert_eq!(res, 3.0);
+        assert_eq!(res, "3");
     }
 
     #[test]
@@ -349,17 +386,19 @@ mod tests {
         let mut sheet = SpreadSheet::new();
 
         let a1 = "=";
-        let err = sheet.set_cell("A1", a1).unwrap_err();
-        assert!(matches!(err, Error::Parser(_))); // FIXME: Should be a literal!
+        sheet.set_cell("A1", a1).unwrap();
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, a1);
 
         let a2 = "=1 + 2=";
+        // Errors for robustness
         let err = sheet.set_cell("A2", a2).unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        assert!(matches!(err, InvalidExpression(_)));
 
         let a3 = "3=1 + 2"; // Taken as a literal
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 0.0);
+        assert_eq!(res, a3);
     }
 
     #[test]
@@ -369,12 +408,22 @@ mod tests {
         let empty = "";
         sheet.set_cell("A1", empty).unwrap();
         let res = sheet.get_cell("A1").unwrap();
-        assert_eq!(res, 0.0);
+        assert_eq!(res, empty);
 
-        let a2 = "TEST";
+        let a2 = "This is a literal TEST";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
-        assert_eq!(res, 0.0);
+        assert_eq!(res, a2);
+    }
+
+    #[test]
+    fn sheet_literal_in_formula() {
+        let mut sheet = SpreadSheet::new();
+
+        sheet.set_cell("A1", "bullshit").unwrap();
+        sheet.set_cell("A2", "= A1 + 1").unwrap();
+        let err = sheet.get_cell("A2").unwrap_err();
+        assert_eq!(err, InvalidNumericLiteral("A1".to_string()));
     }
 
     #[test]
@@ -384,17 +433,17 @@ mod tests {
         let a1 = "123";
         sheet.set_cell("A1", a1).unwrap();
         let res = sheet.get_cell("A1").unwrap();
-        assert_eq!(res, 123.0);
+        assert_eq!(res, "123");
 
         let a2 = "+123";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
-        assert_eq!(res, 123.0);
+        assert_eq!(res, "123");
 
         let a3 = "-123";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -123.0);
+        assert_eq!(res, "-123");
     }
 
     #[test]
@@ -404,17 +453,17 @@ mod tests {
         let a1 = "123.456";
         sheet.set_cell("A1", a1).unwrap();
         let res = sheet.get_cell("A1").unwrap();
-        assert_eq!(res, 123.456);
+        assert_eq!(res, "123.456");
 
         let a2 = "+123.456";
         sheet.set_cell("A2", a2).unwrap();
         let res = sheet.get_cell("A2").unwrap();
-        assert_eq!(res, 123.456);
+        assert_eq!(res, "123.456");
 
-        let a3 = "-123.01";
+        let a3 = "-1231";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -123.01);
+        assert_eq!(res, "-1231");
     }
 
     #[test]
@@ -424,37 +473,38 @@ mod tests {
         let aa2 = "=3";
         sheet.set_cell("AA2", aa2).unwrap();
         let res = sheet.get_cell("AA2").unwrap();
-        assert_eq!(res, 3.0);
+        assert_eq!(res, "3");
 
         let zz9999 = "=9999";
         sheet.set_cell("ZZ9999", zz9999).unwrap();
         let res = sheet.get_cell("ZZ9999").unwrap();
-        assert_eq!(res, 9999.);
+        assert_eq!(res, "9999");
 
         // Invalid names
         let err = sheet.set_cell("A0", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("A0"));
+        assert_eq!(err, InvalidCellName("A0".to_string()));
 
         let err = sheet.set_cell("A01", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("A01"));
+        assert_eq!(err, InvalidCellName("A01".to_string()));
 
         let err = sheet.set_cell("AAA1", "=1").unwrap_err();
-        assert_eq!(err, InvalidCellName("AAA1"));
+        assert_eq!(err, InvalidCellName("AAA1".to_string()));
     }
 
     #[test]
-    #[should_panic]
-    fn sheet_wrong_get_cell_panics() {
+    fn sheet_wrong_cell_name_errors() {
         let sheet = SpreadSheet::new();
-        sheet.get_cell("AAA1").unwrap();
+        let err = sheet.get_cell("AAA1").unwrap_err();
+        assert!(matches!(err, InvalidCellName(_)))
     }
 
     #[test]
-    fn sheet_wrong_set_cell_expression() {
+    fn sheet_wrong_cell_formula_as_literal() {
         let mut sheet = SpreadSheet::new();
 
-        let err = sheet.set_cell("A1", "=AAA1 + 1").unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        sheet.set_cell("A1", "=AAA1 + 1").unwrap(); // FIXME? Map invalid cell name to zero
+        let res = sheet.get_cell("A1").unwrap();
+        assert_eq!(res, "=AAA1 + 1");
     }
 
     #[test]
@@ -467,7 +517,7 @@ mod tests {
         ] {
             sheet.set_cell("I1", &["=", i].concat()).unwrap();
             let res = sheet.get_cell("I1").unwrap();
-            assert_eq!(res, i.parse::<i64>().unwrap() as f64);
+            assert_eq!(res, i.parse::<f64>().unwrap().to_string());
         }
     }
 
@@ -476,30 +526,12 @@ mod tests {
         let mut sheet = SpreadSheet::new();
 
         for f in &[
-            "0.0",
-            "0.",
-            "+0.",
-            "-0.",
-            "0.0000",
-            "+0.000",
-            "-0.000000",
-            "0.01",
-            "+0.01",
-            "-0.01",
-            "1.0",
-            "1.",
-            "+1.",
-            "-1.",
-            "1.0000",
-            "+1.000",
-            "-1.000000",
-            "1.234",
-            "+1.234",
-            "-1.234",
+            "0", "0.", "+0.", "-0.", "0", "+0", "-0", "01", "+01", "-01", "1", "1.", "+1.", "-1.",
+            "1", "+1", "-1", "1.234", "+1.234", "-1.234",
         ] {
             sheet.set_cell("F1", &["=", f].concat()).unwrap();
             let res = sheet.get_cell("F1").unwrap();
-            assert_eq!(res, f.parse::<f64>().unwrap());
+            assert_eq!(res, f.parse::<f64>().unwrap().to_string());
         }
     }
 
@@ -511,12 +543,12 @@ mod tests {
         sheet.set_cell("A3", a3).unwrap();
 
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.0);
+        assert_eq!(res, "1");
 
         sheet.set_cell("B4", "=2").unwrap();
 
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 3.0);
+        assert_eq!(res, "3");
     }
 
     #[test]
@@ -530,12 +562,12 @@ mod tests {
         sheet.set_cell("A3", a3).unwrap();
 
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 6.0);
+        assert_eq!(res, "6");
 
         sheet.set_cell("B4", "=2").unwrap();
 
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 3.0);
+        assert_eq!(res, "3");
     }
 
     #[test]
@@ -552,12 +584,12 @@ mod tests {
         sheet.set_cell("A1", a1).unwrap();
 
         let res = sheet.get_cell("A1").unwrap();
-        assert_eq!(res, 8.0);
+        assert_eq!(res, "8");
 
         sheet.set_cell("A3", "=4").unwrap();
 
         let res = sheet.get_cell("A1").unwrap();
-        assert_eq!(res, 9.0);
+        assert_eq!(res, "9");
     }
 
     #[test]
@@ -567,10 +599,10 @@ mod tests {
         // Unary ops
         sheet.set_cell("A3", "=+2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.0);
+        assert_eq!(res, "2");
         sheet.set_cell("A3", "=-2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -2.0);
+        assert_eq!(res, "-2");
     }
 
     #[test]
@@ -580,10 +612,10 @@ mod tests {
         // Unary ops
         sheet.set_cell("A3", "=+(2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.0);
+        assert_eq!(res, "2");
         sheet.set_cell("A3", "=-(2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -2.0);
+        assert_eq!(res, "-2");
     }
 
     #[test]
@@ -593,10 +625,10 @@ mod tests {
         // Unary ops
         sheet.set_cell("A3", "= + (2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.0);
+        assert_eq!(res, "2");
         sheet.set_cell("A3", "= - (2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -2.0);
+        assert_eq!(res, "-2");
     }
 
     #[test]
@@ -606,10 +638,10 @@ mod tests {
         // Unary ops
         sheet.set_cell("A3", "=+ (2 + 2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 4.0);
+        assert_eq!(res, "4");
         sheet.set_cell("A3", "= - (2 + 2)").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -4.0);
+        assert_eq!(res, "-4");
     }
 
     #[test]
@@ -619,10 +651,10 @@ mod tests {
         // Unary ops
         sheet.set_cell("A3", "=+2 + 2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 4.0);
+        assert_eq!(res, "4");
         sheet.set_cell("A3", "=-2 + 2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 0.0);
+        assert_eq!(res, "0");
     }
 
     #[test]
@@ -632,39 +664,43 @@ mod tests {
         // Unary works like a binary op with zero to the left
         sheet.set_cell("A3", "=+ +2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.);
+        assert_eq!(res, "2");
 
         // Same as binary
         sheet.set_cell("A3", "=0 + +2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.);
+        assert_eq!(res, "2");
         sheet.set_cell("A3", "=0 + -2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -2.);
+        assert_eq!(res, "-2");
         sheet.set_cell("A3", "=0 - -2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 2.);
+        assert_eq!(res, "2");
         sheet.set_cell("A3", "=3 + ++2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 5.);
+        assert_eq!(res, "5");
         sheet.set_cell("A3", "=3 / + +2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 3. / 2.);
+        assert_eq!(res, (3. / 2.).to_string());
         sheet.set_cell("A3", "=3 / ++2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 3. / 2.);
+        assert_eq!(res, (3. / 2.).to_string());
     }
 
     #[test]
-    fn sheet_binary_errors() {
+    fn sheet_formula_error_as_literal() {
         let mut sheet = SpreadSheet::new();
 
-        // Binary errors
-        let err = sheet.set_cell("A3", "=3//2").unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
-        let err = sheet.set_cell("A3", "=**2").unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
-        // TODO? Add more
+        let a2 = "=3//2";
+        sheet.set_cell("A2", "=3//2").unwrap();
+        let res = sheet.get_cell("A2").unwrap();
+        assert_eq!(res, a2);
+
+        let a3 = "=**2";
+        sheet.set_cell("A3", a3).unwrap();
+        let res = sheet.get_cell("A3").unwrap();
+        assert_eq!(res, a3);
+        // TODO? Add more / document behaviour
     }
 
     #[test]
@@ -674,26 +710,26 @@ mod tests {
         // Division
         sheet.set_cell("A3", "=2 / 2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.0);
+        assert_eq!(res, "1");
         sheet.set_cell("A3", "=1 / 2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.0 / 2.0);
+        assert_eq!(res, (1.0 / 2.0).to_string());
 
         sheet.set_cell("A3", "=-1 / 2").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -1.0 / 2.0);
+        assert_eq!(res, (-1.0 / 2.0).to_string());
 
         sheet.set_cell("A3", "=1 / -3").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.0 / -3.0);
+        assert_eq!(res, (1.0 / -3.0).to_string());
 
         sheet.set_cell("A3", "=1 / 0").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, f64::INFINITY);
+        assert_eq!(res, f64::INFINITY.to_string());
 
         sheet.set_cell("A3", "=0 / 0").unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res.to_string(), f64::NAN.to_string());
+        assert_eq!(res, f64::NAN.to_string());
     }
 
     #[test]
@@ -704,39 +740,39 @@ mod tests {
         let a3 = "=(-1)**2";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.);
+        assert_eq!(res, "1");
 
         let a3 = "=-1**2";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, -1.);
+        assert_eq!(res, "-1");
 
         let a3 = "=3**2**3";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 729.);
+        assert_eq!(res, "729");
 
         // Zero powers
         let a3 = "=0**3";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 0.);
+        assert_eq!(res, "0");
 
         let a3 = "=3**0";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.);
+        assert_eq!(res, "1");
 
         let a3 = "=0**0";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 1.); // FIXME: Should be indeterminate / NaN
+        assert_eq!(res, "1"); // FIXME: Should be indeterminate / NaN
 
         let a3 = "=3**A2+0.1";
         sheet.set_cell("A2", "=2").unwrap();
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 9.1);
+        assert_eq!(res, "9.1");
     }
 
     #[test]
@@ -748,28 +784,32 @@ mod tests {
         let a3 = "=3**(A2+1.)";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 81.);
+        assert_eq!(res, "81");
 
         let a3 = "=3**((A2+1)*0.1*(1+2))";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 3.7371928188465526);
+        assert_eq!(res, "3.7371928188465526");
 
         let a3 = "=3**(A2+0.1+0.2)";
         sheet.set_cell("A3", a3).unwrap();
         let res = sheet.get_cell("A3").unwrap();
-        assert_eq!(res, 37.540507598529565);
+        assert_eq!(res, "37.540507598529565");
     }
 
-    // Broken parentheses
     #[test]
     fn sheet_parentheses_syntax_errors() {
         let mut sheet = SpreadSheet::new();
 
+        // Broken parentheses not considered as literals, for robustness
         let err = sheet.set_cell("A3", "=3**((A2+1)*0.1*(1+2)").unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        assert!(matches!(err, Error::InvalidExpression(_)));
+
         let err = sheet.set_cell("A3", "=(A2+1))").unwrap_err();
-        assert!(matches!(err, Error::Parser(_)));
+        assert!(matches!(err, Error::InvalidExpression(_)));
+
+        let err = sheet.set_cell("A3", "=((A2+1)").unwrap_err();
+        assert!(matches!(err, Error::InvalidExpression(_)));
     }
 
     #[test]
