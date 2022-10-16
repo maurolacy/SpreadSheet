@@ -17,8 +17,8 @@ pub enum Error<'a> {
     #[error("Invalid expression: {0}")]
     InvalidExpression(&'a str),
 
-    #[error("Not a number: {0}")]
-    InvalidNumericLiteral(String),
+    #[error("Unexpected literal: {0}")]
+    UnexpectedLiteral(String),
 
     #[error("Circular dependency detected: {0}")]
     CyclicDependency(&'a str),
